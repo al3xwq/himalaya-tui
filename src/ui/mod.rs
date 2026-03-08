@@ -11,7 +11,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, BottomPanelMode, ComposeAction, Panel};
+use crate::app::{App, BottomPanelMode, ComposeAction, Dialog, EnvelopeAction, Panel};
 
 pub use compose::render_compose;
 pub use envelopes::render_envelopes;
@@ -33,15 +33,42 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     render_status_bar(frame, app, chunks[2]);
 
     // Render dialog overlay if needed
-    if app.show_compose_dialog {
-        render_compose_dialog(frame, app);
+    match app.dialog {
+        Some(Dialog::Envelope) => render_dialog(
+            frame,
+            app.dialog_index,
+            " Actions ",
+            &EnvelopeAction::ALL.map(|a| a.label()),
+        ),
+        Some(Dialog::Compose) => render_dialog(
+            frame,
+            app.dialog_index,
+            " Compose ",
+            &ComposeAction::ALL.map(|a| a.label()),
+        ),
+        Some(Dialog::CopyTo) => {
+            let labels: Vec<&str> = app.mailboxes.iter().map(|m| m.name.as_str()).collect();
+            render_dialog(frame, app.dialog_index, " Copy to ", &labels);
+        }
+        Some(Dialog::MoveTo) => {
+            let labels: Vec<&str> = app.mailboxes.iter().map(|m| m.name.as_str()).collect();
+            render_dialog(frame, app.dialog_index, " Move to ", &labels);
+        }
+        Some(Dialog::Delete) => {
+            render_dialog(frame, app.dialog_index, " Delete? ", &["Yes", "No"]);
+        }
+        None => {}
     }
 }
 
 fn render_header(frame: &mut Frame, app: &App, area: Rect) {
-    let title = format!(" Himalaya TUI - {} ", app.account_name);
-    let header = Paragraph::new(title)
-        .style(Style::default().bg(Color::Blue).fg(Color::White).add_modifier(Modifier::BOLD));
+    let title = format!(" Himalaya TUI — {} ", app.account_name);
+    let header = Paragraph::new(title).style(
+        Style::default()
+            .bg(Color::Blue)
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD),
+    );
     frame.render_widget(header, area);
 }
 
@@ -83,12 +110,12 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         let mailbox = app.selected_mailbox.as_deref().unwrap_or("None");
         let mode_hint = match app.bottom_panel_mode {
-            BottomPanelMode::None => "c: compose | R: reply | f: forward | Enter: read",
-            BottomPanelMode::Message => "q: close | c: compose | R: reply | f: forward",
-            BottomPanelMode::Compose => "C-c C-c: finish",
+            BottomPanelMode::None => "Enter: select",
+            BottomPanelMode::Message => "Esc: close",
+            BottomPanelMode::Compose => "Esc: actions",
         };
         format!(
-            " {} | {} msgs | q: close | Tab: panel | j/k: nav | {}",
+            " {} | {} msgs | Tab: panel | {}",
             mailbox,
             app.envelopes.len(),
             mode_hint
@@ -100,25 +127,25 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(status_bar, area);
 }
 
-fn render_compose_dialog(frame: &mut Frame, app: &App) {
-    let area = centered_rect(40, 25, frame.area());
+fn render_dialog(frame: &mut Frame, selected_index: usize, title: &str, labels: &[&str]) {
+    let height = (labels.len() as u16 + 2).min(20);
+    let area = centered_rect_fixed_height(40, height, frame.area());
 
     frame.render_widget(Clear, area);
 
     let block = Block::default()
-        .title(" Finish Composition ")
+        .title(title)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // Build selectable list items
-    let items: Vec<ListItem> = ComposeAction::ALL
+    let items: Vec<ListItem> = labels
         .iter()
         .enumerate()
-        .map(|(i, action)| {
-            let style = if i == app.compose_dialog_index {
+        .map(|(i, label)| {
+            let style = if i == selected_index {
                 Style::default()
                     .bg(Color::Cyan)
                     .fg(Color::Black)
@@ -127,14 +154,10 @@ fn render_compose_dialog(frame: &mut Frame, app: &App) {
                 Style::default().fg(Color::White)
             };
 
-            let prefix = if i == app.compose_dialog_index {
-                "> "
-            } else {
-                "  "
-            };
+            let prefix = if i == selected_index { "> " } else { "  " };
 
             ListItem::new(Line::from(Span::styled(
-                format!("{}{}", prefix, action.label()),
+                format!("{}{}", prefix, label),
                 style,
             )))
         })
@@ -144,13 +167,13 @@ fn render_compose_dialog(frame: &mut Frame, app: &App) {
     frame.render_widget(list, inner);
 }
 
-fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    let popup_layout = Layout::default()
+fn centered_rect_fixed_height(percent_x: u16, height: u16, r: Rect) -> Rect {
+    let vertical = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Fill(1),
+            Constraint::Length(height),
+            Constraint::Fill(1),
         ])
         .split(r);
 
@@ -161,7 +184,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage(percent_x),
             Constraint::Percentage((100 - percent_x) / 2),
         ])
-        .split(popup_layout[1])[1]
+        .split(vertical[1])[1]
 }
 
 pub fn get_border_style(app: &App, panel: Panel) -> Style {

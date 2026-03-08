@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use ratatui::{
     layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
@@ -5,11 +7,11 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, Panel};
 use super::get_border_style;
+use crate::app::{App, Panel};
 
 pub fn render_envelopes(frame: &mut Frame, app: &App, area: Rect) {
-    let header_cells = ["UID", "Date", "From", "Subject"]
+    let header_cells = ["Flags", "Subject", "From", "Date"]
         .iter()
         .map(|h| Cell::from(*h).style(Style::default().add_modifier(Modifier::BOLD)));
     let header = Row::new(header_cells)
@@ -32,11 +34,13 @@ pub fn render_envelopes(frame: &mut Frame, app: &App, area: Rect) {
                 Style::default().add_modifier(Modifier::BOLD)
             };
 
+            let flags = format_flags(&envelope.flags);
+
             let cells = vec![
-                Cell::from(envelope.uid.to_string()),
-                Cell::from(envelope.date.clone()),
+                Cell::from(flags),
+                Cell::from(envelope.subject.clone()),
                 Cell::from(truncate(&envelope.from, 20)),
-                Cell::from(truncate(&envelope.subject, 40)),
+                Cell::from(truncate(&envelope.date, 6)),
             ];
 
             Row::new(cells).style(style)
@@ -55,10 +59,10 @@ pub fn render_envelopes(frame: &mut Frame, app: &App, area: Rect) {
         .border_style(get_border_style(app, Panel::Envelopes));
 
     let widths = [
-        Constraint::Length(8),
-        Constraint::Length(12),
-        Constraint::Length(22),
-        Constraint::Min(20),
+        Constraint::Length(6),
+        Constraint::Min(10),
+        Constraint::Length(20),
+        Constraint::Length(6),
     ];
 
     let table = Table::new(rows, widths)
@@ -67,6 +71,29 @@ pub fn render_envelopes(frame: &mut Frame, app: &App, area: Rect) {
         .row_highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
     frame.render_widget(table, area);
+}
+
+fn format_flags(flags: &HashSet<String>) -> String {
+    let mut s = String::new();
+
+    s.push(if flags.contains("\\Seen") { ' ' } else { '*' });
+    s.push(if flags.contains("\\Answered") {
+        '↩'
+    } else {
+        ' '
+    });
+    s.push(if flags.contains("\\Flagged") {
+        '!'
+    } else {
+        ' '
+    });
+    s.push(if flags.contains("\\Deleted") {
+        '✗'
+    } else {
+        ' '
+    });
+
+    s
 }
 
 fn truncate(s: &str, max_len: usize) -> String {

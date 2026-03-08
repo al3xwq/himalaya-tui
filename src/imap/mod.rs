@@ -1,15 +1,15 @@
 mod stream;
 
-use std::num::NonZeroU32;
+use std::{collections::HashSet, num::NonZeroU32};
 
 use anyhow::{bail, Result};
 use io_imap::{
-    coroutines::{append::*, fetch::*, lsub::*, select::*},
+    coroutines::{append::*, copy::*, fetch::*, lsub::*, r#move::*, select::*, store::*},
     types::{
         core::{Literal, Vec1},
         extensions::binary::LiteralOrLiteral8,
         fetch::{MacroOrMessageDataItemNames, MessageDataItem, MessageDataItemName},
-        flag::Flag,
+        flag::{Flag, StoreType},
         sequence::SequenceSet,
     },
 };
@@ -115,7 +115,7 @@ fn parse_envelope(seq: NonZeroU32, items: Vec1<MessageDataItem<'static>>) -> Env
     let mut date = String::new();
     let mut from = String::new();
     let mut subject = String::new();
-    let mut flags = Vec::new();
+    let mut flags = HashSet::new();
 
     for item in items.into_iter() {
         match item {
@@ -132,7 +132,7 @@ fn parse_envelope(seq: NonZeroU32, items: Vec1<MessageDataItem<'static>>) -> Env
                 from = format_addresses_short(&env.from);
             }
             MessageDataItem::Flags(f) => {
-                flags = f.into_iter().map(|f| format_flag(f)).collect();
+                flags = f.into_iter().map(format_flag).collect();
             }
             _ => {}
         }
@@ -240,13 +240,12 @@ pub fn fetch_raw_message(config: &ImapConfig, mailbox: &str, uid: u32) -> Result
 
     let id = NonZeroU32::new(uid).ok_or_else(|| anyhow::anyhow!("UID must be non-zero"))?;
 
-    let item_names = MacroOrMessageDataItemNames::MessageDataItemNames(vec![
-        MessageDataItemName::BodyExt {
+    let item_names =
+        MacroOrMessageDataItemNames::MessageDataItemNames(vec![MessageDataItemName::BodyExt {
             section: None,
             partial: None,
             peek: true,
-        },
-    ]);
+        }]);
 
     let mut arg = None;
     let mut coroutine = ImapFetchFirst::new(context, id, item_names, true);
@@ -292,13 +291,12 @@ pub fn fetch_message(config: &ImapConfig, mailbox: &str, uid: u32) -> Result<Str
     // FETCH with BODY.PEEK[] to avoid marking as read
     let id = NonZeroU32::new(uid).ok_or_else(|| anyhow::anyhow!("UID must be non-zero"))?;
 
-    let item_names = MacroOrMessageDataItemNames::MessageDataItemNames(vec![
-        MessageDataItemName::BodyExt {
+    let item_names =
+        MacroOrMessageDataItemNames::MessageDataItemNames(vec![MessageDataItemName::BodyExt {
             section: None,
             partial: None,
             peek: true,
-        },
-    ]);
+        }]);
 
     let mut arg = None;
     let mut coroutine = ImapFetchFirst::new(context, id, item_names, true);
@@ -366,6 +364,119 @@ pub fn save_to_drafts(config: &ImapConfig, content: &str) -> Result<()> {
             ImapAppendResult::Io { io } => arg = Some(handle(&mut stream, io)?),
             ImapAppendResult::Ok { .. } => break,
             ImapAppendResult::Err { err, .. } => bail!(err),
+        }
+    }
+
+    Ok(())
+}
+
+pub fn copy_message(config: &ImapConfig, mailbox: &str, uid: u32, target: &str) -> Result<()> {
+    let (context, mut stream) = connect(config.clone())?;
+
+    let mailbox_owned = mailbox.to_string();
+    let mailbox_name = mailbox_owned.try_into()?;
+
+    let mut arg = None;
+    let mut coroutine = ImapSelect::new(context, mailbox_name);
+
+    let context = loop {
+        match coroutine.resume(arg.take()) {
+            ImapSelectResult::Io { io } => arg = Some(handle(&mut stream, io)?),
+            ImapSelectResult::Ok { context, .. } => break context,
+            ImapSelectResult::Err { err, .. } => bail!(err),
+        }
+    };
+
+    let id = NonZeroU32::new(uid).ok_or_else(|| anyhow::anyhow!("UID must be non-zero"))?;
+    let sequence_set: SequenceSet = id.try_into()?;
+    let target_mailbox: io_imap::types::mailbox::Mailbox<'static> =
+        target.to_string().try_into()?;
+
+    let mut arg = None;
+    let mut coroutine = ImapCopy::new(context, sequence_set, target_mailbox, true);
+
+    loop {
+        match coroutine.resume(arg.take()) {
+            ImapCopyResult::Io { io } => arg = Some(handle(&mut stream, io)?),
+            ImapCopyResult::Ok { .. } => break,
+            ImapCopyResult::Err { err, .. } => bail!(err),
+        }
+    }
+
+    Ok(())
+}
+
+pub fn move_message(config: &ImapConfig, mailbox: &str, uid: u32, target: &str) -> Result<()> {
+    let (context, mut stream) = connect(config.clone())?;
+
+    let mailbox_owned = mailbox.to_string();
+    let mailbox_name = mailbox_owned.try_into()?;
+
+    let mut arg = None;
+    let mut coroutine = ImapSelect::new(context, mailbox_name);
+
+    let context = loop {
+        match coroutine.resume(arg.take()) {
+            ImapSelectResult::Io { io } => arg = Some(handle(&mut stream, io)?),
+            ImapSelectResult::Ok { context, .. } => break context,
+            ImapSelectResult::Err { err, .. } => bail!(err),
+        }
+    };
+
+    let id = NonZeroU32::new(uid).ok_or_else(|| anyhow::anyhow!("UID must be non-zero"))?;
+    let sequence_set: SequenceSet = id.try_into()?;
+    let target_mailbox: io_imap::types::mailbox::Mailbox<'static> =
+        target.to_string().try_into()?;
+
+    let mut arg = None;
+    let mut coroutine = ImapMove::new(context, sequence_set, target_mailbox, true);
+
+    loop {
+        match coroutine.resume(arg.take()) {
+            ImapMoveResult::Io { io } => arg = Some(handle(&mut stream, io)?),
+            ImapMoveResult::Ok { .. } => break,
+            ImapMoveResult::Err { err, .. } => bail!(err),
+        }
+    }
+
+    Ok(())
+}
+
+pub fn delete_message(config: &ImapConfig, mailbox: &str, uid: u32) -> Result<()> {
+    let (context, mut stream) = connect(config.clone())?;
+
+    let mailbox_owned = mailbox.to_string();
+    let mailbox_name = mailbox_owned.try_into()?;
+
+    let mut arg = None;
+    let mut coroutine = ImapSelect::new(context, mailbox_name);
+
+    let context = loop {
+        match coroutine.resume(arg.take()) {
+            ImapSelectResult::Io { io } => arg = Some(handle(&mut stream, io)?),
+            ImapSelectResult::Ok { context, .. } => break context,
+            ImapSelectResult::Err { err, .. } => bail!(err),
+        }
+    };
+
+    let id = NonZeroU32::new(uid).ok_or_else(|| anyhow::anyhow!("UID must be non-zero"))?;
+    let sequence_set: SequenceSet = id.try_into()?;
+
+    // Add \Deleted flag
+    let mut arg = None;
+    let mut coroutine = ImapStoreSilent::new(
+        context,
+        sequence_set,
+        StoreType::Add,
+        vec![Flag::Deleted],
+        true,
+    );
+
+    loop {
+        match coroutine.resume(arg.take()) {
+            ImapStoreSilentResult::Io { io } => arg = Some(handle(&mut stream, io)?),
+            ImapStoreSilentResult::Ok { .. } => break,
+            ImapStoreSilentResult::Err { err, .. } => bail!(err),
         }
     }
 

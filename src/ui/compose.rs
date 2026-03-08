@@ -12,7 +12,7 @@ use super::get_border_style;
 
 pub fn render_compose(frame: &mut Frame, app: &mut App, area: Rect) {
     let block = Block::default()
-        .title(" Compose (C-c C-c: finish) ")
+        .title(" Compose (Esc: actions) ")
         .borders(Borders::ALL)
         .border_style(get_border_style(app, Panel::Compose));
 

@@ -1,7 +1,8 @@
-use std::{io, path::PathBuf};
+use std::{fs::File, io, path::PathBuf};
 
 use anyhow::Result;
 use edtui::{actions::system_editor, EditorEventHandler};
+use mml::message::compiler::MmlCompilerBuilder;
 use ratatui::{
     backend::CrosstermBackend,
     crossterm::{
@@ -15,13 +16,20 @@ use ratatui::{
     Terminal,
 };
 
-use himalaya_tui::app::{App, ComposeAction, Panel};
+use himalaya_tui::app::{App, ComposeAction, Dialog, EnvelopeAction, Panel};
 use himalaya_tui::ui;
 
 #[cfg(feature = "imap")]
 use himalaya_tui::imap;
 
 fn main() -> Result<()> {
+    let log_file = File::create("/tmp/himalaya-tui.log")?;
+    simplelog::WriteLogger::init(
+        simplelog::LevelFilter::Trace,
+        simplelog::Config::default(),
+        log_file,
+    )?;
+
     let config_paths = get_config_paths();
     let account_name = std::env::args().nth(1);
 
@@ -39,7 +47,15 @@ fn main() -> Result<()> {
         terminal.draw(|f| ui::render(f, &mut app))?;
 
         match imap::fetch_mailboxes(&app.imap_config) {
-            Ok(mailboxes) => app.set_mailboxes(mailboxes),
+            Ok(mailboxes) => {
+                app.set_mailboxes(mailboxes);
+                if let Some(ref mailbox) = app.selected_mailbox.clone() {
+                    match imap::fetch_envelopes(&app.imap_config, mailbox) {
+                        Ok(envelopes) => app.set_envelopes(envelopes),
+                        Err(e) => app.set_status(format!("Error: {}", e)),
+                    }
+                }
+            }
             Err(e) => app.set_status(format!("Error: {}", e)),
         }
     }
@@ -62,8 +78,7 @@ fn main() -> Result<()> {
 }
 
 fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> Result<()> {
-    // Use Emacs keybindings for edtui
-    let mut editor_handler = EditorEventHandler::emacs_mode();
+    let mut editor_handler = EditorEventHandler::default();
 
     while app.running {
         terminal.draw(|f| ui::render(f, app))?;
@@ -73,31 +88,33 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                 continue;
             }
 
-            // Handle compose dialog (selectable list)
-            if app.show_compose_dialog {
-                handle_compose_dialog(app, key.code);
+            // Handle dialog if open
+            if let Some(dialog) = app.dialog {
+                match dialog {
+                    Dialog::Envelope => handle_envelope_dialog(app, key.code),
+                    Dialog::Compose => handle_compose_dialog(app, key.code),
+                    #[cfg(feature = "imap")]
+                    Dialog::CopyTo => handle_copy_to_dialog(app, key.code),
+                    #[cfg(feature = "imap")]
+                    Dialog::MoveTo => handle_move_to_dialog(app, key.code),
+                    #[cfg(feature = "imap")]
+                    Dialog::Delete => handle_delete_dialog(app, key.code),
+                    #[cfg(not(feature = "imap"))]
+                    Dialog::CopyTo | Dialog::MoveTo | Dialog::Delete => {
+                        if key.code == KeyCode::Esc {
+                            app.close_dialog();
+                        }
+                    }
+                }
                 continue;
             }
 
-            // Handle compose mode (edtui with Ctrl-C Ctrl-C to finish)
+            // Handle compose mode
             if app.active_panel == Panel::Compose {
-                // Check for Ctrl-C
-                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
-                    if app.ctrl_c_pending {
-                        // Second Ctrl-C: finish compose
-                        app.ctrl_c_pending = false;
-                        app.finish_compose();
-                    } else {
-                        // First Ctrl-C: mark as pending
-                        app.ctrl_c_pending = true;
-                        app.set_status("Press Ctrl-C again to finish editing");
-                    }
+                if key.code == KeyCode::Esc {
+                    app.open_dialog(Dialog::Compose);
                     continue;
                 }
-
-                // Any other key resets Ctrl-C pending
-                app.ctrl_c_pending = false;
-                app.clear_status();
 
                 // Forward to edtui
                 editor_handler.on_key_event(key, &mut app.editor_state);
@@ -105,50 +122,33 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                 // Check if system editor was requested (Alt+e)
                 if system_editor::is_pending(&app.editor_state) {
                     system_editor::open(&mut app.editor_state, terminal)?;
-                    execute!(
-                        terminal.backend_mut(),
-                        EnableMouseCapture
-                    )?;
+                    execute!(terminal.backend_mut(), EnableMouseCapture)?;
                 }
 
                 continue;
             }
 
+            // Ctrl+C: new composition
+            if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                app.start_compose();
+                continue;
+            }
+
             // Normal mode key handling
             match key.code {
-                KeyCode::Char('q') => {
-                    // Close current frame, or quit if nothing to close
-                    if !app.close_current() {
-                        app.quit();
-                    }
-                }
                 KeyCode::Esc => {
-                    // Close current frame, or quit if nothing to close
-                    if !app.close_current() {
+                    if app.previewing_compose {
+                        app.close_preview();
+                    } else if !app.close_current() {
                         app.quit();
                     }
                 }
                 KeyCode::Tab => app.toggle_panel(),
-                KeyCode::Char('j') | KeyCode::Down => app.next_item(),
-                KeyCode::Char('k') | KeyCode::Up => app.previous_item(),
+                KeyCode::Down => app.next_item(),
+                KeyCode::Up => app.previous_item(),
                 KeyCode::Enter => {
                     #[cfg(feature = "imap")]
                     handle_enter(app);
-                }
-                KeyCode::Char('r') => {
-                    #[cfg(feature = "imap")]
-                    refresh_current(app);
-                }
-                KeyCode::Char('c') => {
-                    app.start_compose();
-                }
-                #[cfg(feature = "imap")]
-                KeyCode::Char('R') => {
-                    handle_reply(app);
-                }
-                #[cfg(feature = "imap")]
-                KeyCode::Char('f') => {
-                    handle_forward(app);
                 }
                 _ => {}
             }
@@ -158,38 +158,88 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
     Ok(())
 }
 
+fn handle_envelope_dialog(app: &mut App, key: KeyCode) {
+    match key {
+        KeyCode::Down => app.dialog_next(),
+        KeyCode::Up => app.dialog_previous(),
+        KeyCode::Enter => {
+            let action = app.get_selected_envelope_action();
+            app.close_dialog();
+
+            #[cfg(feature = "imap")]
+            match action {
+                EnvelopeAction::Read => handle_read_message(app),
+                EnvelopeAction::Reply => handle_reply(app, false),
+                EnvelopeAction::ReplyAll => handle_reply(app, true),
+                EnvelopeAction::Forward => handle_forward(app),
+                EnvelopeAction::Copy => app.open_dialog(Dialog::CopyTo),
+                EnvelopeAction::Move => app.open_dialog(Dialog::MoveTo),
+                EnvelopeAction::Delete => app.open_dialog(Dialog::Delete),
+            }
+
+            #[cfg(not(feature = "imap"))]
+            {
+                let _ = action;
+                app.set_status("IMAP feature not enabled");
+            }
+        }
+        KeyCode::Esc => app.close_dialog(),
+        _ => {}
+    }
+}
+
 fn handle_compose_dialog(app: &mut App, key: KeyCode) {
     match key {
-        KeyCode::Char('j') | KeyCode::Down => app.dialog_next(),
-        KeyCode::Char('k') | KeyCode::Up => app.dialog_previous(),
-        KeyCode::Enter => match app.get_selected_compose_action() {
-            ComposeAction::SaveToDrafts => {
-                #[cfg(feature = "imap")]
-                {
+        KeyCode::Down => app.dialog_next(),
+        KeyCode::Up => app.dialog_previous(),
+        KeyCode::Enter => {
+            let action = app.get_selected_compose_action();
+            match action {
+                ComposeAction::Send => {
+                    app.set_status("SMTP not configured yet");
+                }
+                ComposeAction::Preview => {
                     let content = app.get_compose_content();
-                    app.set_status("Saving to Drafts...");
-                    match imap::save_to_drafts(&app.imap_config, &content) {
-                        Ok(_) => {
-                            app.set_status("Saved to Drafts");
-                            app.cancel_compose();
-                        }
-                        Err(e) => app.set_status(format!("Error: {}", e)),
+                    match MmlCompilerBuilder::new().build(&content) {
+                        Ok(compiler) => match compiler.compile() {
+                            Ok(result) => match result.into_string() {
+                                Ok(mime) => {
+                                    app.close_dialog();
+                                    app.preview_compose(mime);
+                                }
+                                Err(e) => app.set_status(format!("Error: {e}")),
+                            },
+                            Err(e) => app.set_status(format!("Error compiling: {e}")),
+                        },
+                        Err(e) => app.set_status(format!("Error parsing: {e}")),
                     }
                 }
-                #[cfg(not(feature = "imap"))]
-                {
-                    app.set_status("IMAP feature not enabled");
-                    app.cancel_compose();
+                ComposeAction::SaveToDrafts => {
+                    #[cfg(feature = "imap")]
+                    {
+                        let content = app.get_compose_content();
+                        app.set_status("Saving to Drafts...");
+                        match imap::save_to_drafts(&app.imap_config, &content) {
+                            Ok(_) => {
+                                app.set_status("Saved to Drafts");
+                                app.cancel_compose();
+                            }
+                            Err(e) => app.set_status(format!("Error: {}", e)),
+                        }
+                    }
+                    #[cfg(not(feature = "imap"))]
+                    {
+                        app.set_status("IMAP feature not enabled");
+                        app.cancel_compose();
+                    }
+                }
+                ComposeAction::Cancel => {
+                    app.close_dialog();
                 }
             }
-            ComposeAction::Abandon => {
-                app.cancel_compose();
-                app.set_status("Composition cancelled");
-            }
-        },
-        KeyCode::Esc | KeyCode::Char('q') => {
-            // Go back to editing
-            app.show_compose_dialog = false;
+        }
+        KeyCode::Esc => {
+            app.cancel_compose();
         }
         _ => {}
     }
@@ -208,39 +258,129 @@ fn handle_enter(app: &mut App) {
             }
         }
         Panel::Envelopes => {
-            // Fetch and show the selected message
-            if let (Some(envelope), Some(mailbox)) = (
-                app.get_selected_envelope().cloned(),
-                app.selected_mailbox.clone(),
-            ) {
-                app.set_status(format!("Loading message {}...", envelope.uid));
-                match imap::fetch_message(&app.imap_config, &mailbox, envelope.uid) {
-                    Ok(content) => app.show_message(content),
-                    Err(e) => app.set_status(format!("Error: {}", e)),
-                }
+            if app.get_selected_envelope().is_some() {
+                app.open_dialog(Dialog::Envelope);
             }
         }
         Panel::Message => {
-            // Close message view
             app.close_bottom_panel();
         }
-        Panel::Compose => {
-            // Handled separately
+        Panel::Compose => {}
+    }
+}
+
+#[cfg(feature = "imap")]
+fn handle_read_message(app: &mut App) {
+    if let (Some(envelope), Some(mailbox)) = (
+        app.get_selected_envelope().cloned(),
+        app.selected_mailbox.clone(),
+    ) {
+        app.set_status(format!("Loading message {}...", envelope.uid));
+        match imap::fetch_message(&app.imap_config, &mailbox, envelope.uid) {
+            Ok(content) => app.show_message(content),
+            Err(e) => app.set_status(format!("Error: {}", e)),
         }
     }
 }
 
 #[cfg(feature = "imap")]
-fn handle_reply(app: &mut App) {
+fn handle_reply(app: &mut App, reply_all: bool) {
     if let (Some(envelope), Some(mailbox)) = (
         app.get_selected_envelope().cloned(),
         app.selected_mailbox.clone(),
     ) {
         app.set_status(format!("Loading message {}...", envelope.uid));
         match imap::fetch_raw_message(&app.imap_config, &mailbox, envelope.uid) {
-            Ok(raw) => app.start_reply(&raw),
+            Ok(raw) => app.start_reply(&raw, reply_all),
             Err(e) => app.set_status(format!("Error: {}", e)),
         }
+    }
+}
+
+#[cfg(feature = "imap")]
+fn handle_delete_dialog(app: &mut App, key: KeyCode) {
+    match key {
+        KeyCode::Down => app.dialog_next(),
+        KeyCode::Up => app.dialog_previous(),
+        KeyCode::Enter => {
+            let confirmed = app.dialog_index == 0;
+            app.close_dialog();
+
+            if !confirmed {
+                return;
+            }
+
+            if let (Some(envelope), Some(mailbox)) = (
+                app.get_selected_envelope().cloned(),
+                app.selected_mailbox.clone(),
+            ) {
+                app.set_status(format!("Deleting message {}...", envelope.uid));
+                match imap::delete_message(&app.imap_config, &mailbox, envelope.uid) {
+                    Ok(_) => {
+                        app.flag_selected_envelope("\\Deleted");
+                        app.set_status("Message flagged as deleted");
+                    }
+                    Err(e) => app.set_status(format!("Error: {}", e)),
+                }
+            }
+        }
+        KeyCode::Esc => app.close_dialog(),
+        _ => {}
+    }
+}
+
+#[cfg(feature = "imap")]
+fn handle_copy_to_dialog(app: &mut App, key: KeyCode) {
+    match key {
+        KeyCode::Down => app.dialog_next(),
+        KeyCode::Up => app.dialog_previous(),
+        KeyCode::Enter => {
+            let target = app.mailboxes.get(app.dialog_index).map(|m| m.name.clone());
+            app.close_dialog();
+
+            if let (Some(target), Some(envelope), Some(mailbox)) = (
+                target,
+                app.get_selected_envelope().cloned(),
+                app.selected_mailbox.clone(),
+            ) {
+                app.set_status(format!("Copying to {}...", target));
+                match imap::copy_message(&app.imap_config, &mailbox, envelope.uid, &target) {
+                    Ok(_) => app.set_status(format!("Copied to {}", target)),
+                    Err(e) => app.set_status(format!("Error: {}", e)),
+                }
+            }
+        }
+        KeyCode::Esc => app.close_dialog(),
+        _ => {}
+    }
+}
+
+#[cfg(feature = "imap")]
+fn handle_move_to_dialog(app: &mut App, key: KeyCode) {
+    match key {
+        KeyCode::Down => app.dialog_next(),
+        KeyCode::Up => app.dialog_previous(),
+        KeyCode::Enter => {
+            let target = app.mailboxes.get(app.dialog_index).map(|m| m.name.clone());
+            app.close_dialog();
+
+            if let (Some(target), Some(envelope), Some(mailbox)) = (
+                target,
+                app.get_selected_envelope().cloned(),
+                app.selected_mailbox.clone(),
+            ) {
+                app.set_status(format!("Moving to {}...", target));
+                match imap::move_message(&app.imap_config, &mailbox, envelope.uid, &target) {
+                    Ok(_) => {
+                        app.remove_selected_envelope();
+                        app.set_status(format!("Moved to {}", target));
+                    }
+                    Err(e) => app.set_status(format!("Error: {}", e)),
+                }
+            }
+        }
+        KeyCode::Esc => app.close_dialog(),
+        _ => {}
     }
 }
 
@@ -255,23 +395,6 @@ fn handle_forward(app: &mut App) {
             Ok(raw) => app.start_forward(&raw),
             Err(e) => app.set_status(format!("Error: {}", e)),
         }
-    }
-}
-
-#[cfg(feature = "imap")]
-fn refresh_current(app: &mut App) {
-    app.set_status("Refreshing...");
-    match imap::fetch_mailboxes(&app.imap_config) {
-        Ok(mailboxes) => {
-            app.set_mailboxes(mailboxes);
-            if let Some(ref mailbox) = app.selected_mailbox.clone() {
-                match imap::fetch_envelopes(&app.imap_config, mailbox) {
-                    Ok(envelopes) => app.set_envelopes(envelopes),
-                    Err(e) => app.set_status(format!("Error: {}", e)),
-                }
-            }
-        }
-        Err(e) => app.set_status(format!("Error: {}", e)),
     }
 }
 

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{collections::HashSet, path::PathBuf};
 
 use anyhow::{bail, Result};
 use edtui::{EditorMode, EditorState, Lines};
@@ -23,20 +23,73 @@ pub enum BottomPanelMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ComposeAction {
-    SaveToDrafts,
-    Abandon,
+pub enum EnvelopeAction {
+    Read,
+    Reply,
+    ReplyAll,
+    Forward,
+    Copy,
+    Move,
+    Delete,
 }
 
-impl ComposeAction {
-    pub const ALL: [ComposeAction; 2] = [ComposeAction::SaveToDrafts, ComposeAction::Abandon];
+impl EnvelopeAction {
+    pub const ALL: [EnvelopeAction; 7] = [
+        EnvelopeAction::Read,
+        EnvelopeAction::Reply,
+        EnvelopeAction::ReplyAll,
+        EnvelopeAction::Forward,
+        EnvelopeAction::Copy,
+        EnvelopeAction::Move,
+        EnvelopeAction::Delete,
+    ];
 
     pub fn label(&self) -> &'static str {
         match self {
-            ComposeAction::SaveToDrafts => "Save to Drafts",
-            ComposeAction::Abandon => "Abandon",
+            EnvelopeAction::Read => "Read",
+            EnvelopeAction::Reply => "Reply",
+            EnvelopeAction::ReplyAll => "Reply All",
+            EnvelopeAction::Forward => "Forward",
+            EnvelopeAction::Copy => "Copy",
+            EnvelopeAction::Move => "Move",
+            EnvelopeAction::Delete => "Mark for deletion",
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComposeAction {
+    Send,
+    Preview,
+    SaveToDrafts,
+    Cancel,
+}
+
+impl ComposeAction {
+    pub const ALL: [ComposeAction; 4] = [
+        ComposeAction::Send,
+        ComposeAction::Preview,
+        ComposeAction::SaveToDrafts,
+        ComposeAction::Cancel,
+    ];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            ComposeAction::Send => "Send",
+            ComposeAction::Preview => "Preview",
+            ComposeAction::SaveToDrafts => "Save to Drafts",
+            ComposeAction::Cancel => "Cancel",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dialog {
+    Envelope,
+    Compose,
+    CopyTo,
+    MoveTo,
+    Delete,
 }
 
 #[derive(Debug, Clone)]
@@ -52,7 +105,7 @@ pub struct Envelope {
     pub date: String,
     pub from: String,
     pub subject: String,
-    pub flags: Vec<String>,
+    pub flags: HashSet<String>,
 }
 
 pub struct App {
@@ -74,14 +127,14 @@ pub struct App {
     pub bottom_panel_mode: BottomPanelMode,
     pub message_content: Option<String>,
     pub message_scroll: u16,
+    pub previewing_compose: bool,
 
     // Message composition
     pub editor_state: EditorState,
-    pub show_compose_dialog: bool,
-    pub compose_dialog_index: usize,
 
-    // Ctrl-C tracking for Ctrl-C Ctrl-C
-    pub ctrl_c_pending: bool,
+    // Dialog
+    pub dialog: Option<Dialog>,
+    pub dialog_index: usize,
 }
 
 impl App {
@@ -119,10 +172,10 @@ impl App {
             bottom_panel_mode: BottomPanelMode::None,
             message_content: None,
             message_scroll: 0,
+            previewing_compose: false,
             editor_state: EditorState::new(Lines::from("")),
-            show_compose_dialog: false,
-            compose_dialog_index: 0,
-            ctrl_c_pending: false,
+            dialog: None,
+            dialog_index: 0,
         })
     }
 
@@ -137,12 +190,24 @@ impl App {
                 self.close_bottom_panel();
                 true
             }
-            Panel::Envelopes if self.bottom_panel_mode != BottomPanelMode::None => {
-                self.close_bottom_panel();
+            Panel::Envelopes => {
+                if self.bottom_panel_mode != BottomPanelMode::None {
+                    self.close_bottom_panel();
+                } else {
+                    self.unselect_mailbox();
+                }
                 true
             }
             _ => false,
         }
+    }
+
+    pub fn unselect_mailbox(&mut self) {
+        self.selected_mailbox = None;
+        self.envelopes.clear();
+        self.envelope_index = 0;
+        self.close_bottom_panel();
+        self.active_panel = Panel::Mailboxes;
     }
 
     pub fn toggle_panel(&mut self) {
@@ -217,6 +282,7 @@ impl App {
             self.envelope_index = 0;
             self.envelopes.clear();
             self.close_bottom_panel();
+            self.active_panel = Panel::Envelopes;
             self.status_message = Some(format!("Loading envelopes from {}...", name));
         }
     }
@@ -254,11 +320,27 @@ impl App {
     pub fn close_bottom_panel(&mut self) {
         self.bottom_panel_mode = BottomPanelMode::None;
         self.message_content = None;
-        self.show_compose_dialog = false;
-        self.ctrl_c_pending = false;
+        self.previewing_compose = false;
+        self.dialog = None;
         if self.active_panel == Panel::Message || self.active_panel == Panel::Compose {
             self.active_panel = Panel::Envelopes;
         }
+    }
+
+    pub fn preview_compose(&mut self, content: String) {
+        self.message_content = Some(content);
+        self.message_scroll = 0;
+        self.bottom_panel_mode = BottomPanelMode::Message;
+        self.active_panel = Panel::Message;
+        self.previewing_compose = true;
+    }
+
+    pub fn close_preview(&mut self) {
+        self.message_content = None;
+        self.message_scroll = 0;
+        self.previewing_compose = false;
+        self.bottom_panel_mode = BottomPanelMode::Compose;
+        self.active_panel = Panel::Compose;
     }
 
     pub fn start_compose(&mut self) {
@@ -275,7 +357,7 @@ impl App {
         }
     }
 
-    pub fn start_reply(&mut self, raw_message: &[u8]) {
+    pub fn start_reply(&mut self, raw_message: &[u8], reply_all: bool) {
         let Some(msg) = mail_parser::MessageParser::default().parse(raw_message) else {
             self.set_status("Error: failed to parse message");
             return;
@@ -287,6 +369,7 @@ impl App {
                 from: self.email.clone(),
                 from_name: self.display_name.clone(),
                 signature: self.signature.clone(),
+                reply_all,
                 ..Default::default()
             },
         );
@@ -326,13 +409,7 @@ impl App {
         self.editor_state = state;
         self.bottom_panel_mode = BottomPanelMode::Compose;
         self.active_panel = Panel::Compose;
-        self.show_compose_dialog = false;
-        self.ctrl_c_pending = false;
-    }
-
-    pub fn finish_compose(&mut self) {
-        self.show_compose_dialog = true;
-        self.compose_dialog_index = 0;
+        self.dialog = None;
     }
 
     pub fn get_compose_content(&self) -> String {
@@ -340,7 +417,7 @@ impl App {
     }
 
     pub fn cancel_compose(&mut self) {
-        self.show_compose_dialog = false;
+        self.dialog = None;
         self.close_bottom_panel();
     }
 
@@ -348,19 +425,61 @@ impl App {
         self.envelopes.get(self.envelope_index)
     }
 
-    // Dialog navigation
+    pub fn remove_selected_envelope(&mut self) {
+        if self.envelope_index < self.envelopes.len() {
+            self.envelopes.remove(self.envelope_index);
+            if self.envelope_index >= self.envelopes.len() && self.envelope_index > 0 {
+                self.envelope_index -= 1;
+            }
+        }
+    }
+
+    pub fn flag_selected_envelope(&mut self, flag: &str) {
+        if let Some(envelope) = self.envelopes.get_mut(self.envelope_index) {
+            envelope.flags.insert(flag.to_string());
+        }
+    }
+
+    // Dialog
+
+    pub fn open_dialog(&mut self, dialog: Dialog) {
+        self.dialog = Some(dialog);
+        self.dialog_index = 0;
+    }
+
+    pub fn close_dialog(&mut self) {
+        self.dialog = None;
+    }
+
+    pub fn dialog_item_count(&self) -> usize {
+        match self.dialog {
+            Some(Dialog::Envelope) => EnvelopeAction::ALL.len(),
+            Some(Dialog::Compose) => ComposeAction::ALL.len(),
+            Some(Dialog::CopyTo) | Some(Dialog::MoveTo) => self.mailboxes.len(),
+            Some(Dialog::Delete) => 2,
+            None => 0,
+        }
+    }
+
     pub fn dialog_next(&mut self) {
-        self.compose_dialog_index = (self.compose_dialog_index + 1) % ComposeAction::ALL.len();
+        let count = self.dialog_item_count();
+        if count > 0 {
+            self.dialog_index = (self.dialog_index + 1) % count;
+        }
     }
 
     pub fn dialog_previous(&mut self) {
-        self.compose_dialog_index = self
-            .compose_dialog_index
-            .checked_sub(1)
-            .unwrap_or(ComposeAction::ALL.len() - 1);
+        let count = self.dialog_item_count();
+        if count > 0 {
+            self.dialog_index = self.dialog_index.checked_sub(1).unwrap_or(count - 1);
+        }
+    }
+
+    pub fn get_selected_envelope_action(&self) -> EnvelopeAction {
+        EnvelopeAction::ALL[self.dialog_index]
     }
 
     pub fn get_selected_compose_action(&self) -> ComposeAction {
-        ComposeAction::ALL[self.compose_dialog_index]
+        ComposeAction::ALL[self.dialog_index]
     }
 }
