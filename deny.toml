@@ -1,0 +1,42 @@
+[advisories]
+# Both advisories are "unmaintained", not vulnerabilities. Both crates are
+# pulled transitively via edtui -> syntect; there is no safe upgrade until
+# syntect migrates to maintained forks (yaml-rust2, bincode 2.x).
+ignore = [
+  { id = "RUSTSEC-2024-0320", reason = "yaml-rust unmaintained, transitive via syntect; no upstream fix yet" },
+  { id = "RUSTSEC-2025-0141", reason = "bincode 1.x unmaintained, transitive via syntect; no upstream fix yet" },
+]
+
+[sources]
+allow-git = [
+  "https://github.com/soywod/domain",
+  "https://github.com/pimalaya/io-discovery",
+  "https://github.com/pimalaya/io-email",
+  "https://github.com/pimalaya/io-http",
+  "https://github.com/pimalaya/io-imap",
+  "https://github.com/pimalaya/io-jmap",
+  "https://github.com/pimalaya/io-maildir",
+  "https://github.com/pimalaya/io-smtp",
+  "https://github.com/pimalaya/cli",
+  "https://github.com/pimalaya/config",
+  "https://github.com/pimalaya/stream"
+]
+unknown-git = "deny"
+unknown-registry = "deny"
+
+[licenses]
+allow = [
+  "0BSD",
+  "AGPL-3.0-only",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-3-Clause",
+  "BSL-1.0",
+  "CC0-1.0",
+  "CDLA-Permissive-2.0",
+  "ISC",
+  "MIT",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Zlib"
+]

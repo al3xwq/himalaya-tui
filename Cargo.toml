@@ -1,10 +1,11 @@
 [package]
 name = "himalaya-tui"
 description = "TUI to manage emails"
-version = "0.1.0"
-authors = ["Clement DOUIN <pimalaya.org@posteo.net>"]
-edition = "2021"
-license = "MIT"
+version = "0.0.1"
+authors = ["soywod <pimalaya.org@posteo.net>"]
+rust-version = "1.87"
+edition = "2024"
+license = "AGPL-3.0-only"
 categories = ["command-line-utilities", "email"]
 keywords = ["tui", "email", "imap", "ratatui"]
 homepage = "https://pimalaya.org"

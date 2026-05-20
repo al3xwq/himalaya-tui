@@ -1,10 +1,27 @@
+// This file is part of Himalaya TUI, a TUI to manage emails.
+//
+// Copyright (C) 2025-2026 soywod <pimalaya.org@posteo.net>
+//
+// This program is free software: you can redistribute it and/or modify it under
+// the terms of the GNU Affero General Public License as published by the Free
+// Software Foundation, either version 3 of the License, or (at your option) any
+// later version.
+//
+// This program is distributed in the hope that it will be useful, but WITHOUT
+// ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+// FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+// details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 use std::{fs::File, io, path::PathBuf, time::Duration};
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use clap::Parser;
 use edtui::{
-    actions::{system_editor, Execute, OpenSystemEditor},
     EditorEventHandler,
+    actions::{Execute, OpenSystemEditor, system_editor},
 };
 use himalaya_tui::app::{App, ComposeAction, Dialog, EnvelopeAction, Panel};
 use himalaya_tui::cli::HimalayaTuiCli;
@@ -16,6 +33,7 @@ use io_email::{client::EmailClientStd, flag::Flag};
 use mml::compiler::message::MmlCompilerBuilder;
 use pimalaya_config::toml::TomlConfig;
 use ratatui::{
+    Terminal,
     backend::CrosstermBackend,
     crossterm::{
         event::{
@@ -23,9 +41,8 @@ use ratatui::{
             KeyModifiers,
         },
         execute,
-        terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+        terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
     },
-    Terminal,
 };
 
 // ── Entry point ──────────────────────────────────────────────────────────────

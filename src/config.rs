@@ -1,9 +1,36 @@
+// This file is part of Himalaya TUI, a TUI to manage emails.
+//
+// Copyright (C) 2025-2026 soywod <pimalaya.org@posteo.net>
+//
+// This program is free software: you can redistribute it and/or modify it under
+// the terms of the GNU Affero General Public License as published by the Free
+// Software Foundation, either version 3 of the License, or (at your option) any
+// later version.
+//
+// This program is distributed in the hope that it will be useful, but WITHOUT
+// ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+// FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+// details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+//! TOML configuration model loaded from the same file used by the
+//! [`himalaya`] CLI, plus the `into_client` adapters that turn each
+//! per-backend block into a live IMAP/SMTP/JMAP/Maildir client.
+//!
+//! `Config::project_name()` returns `"himalaya"` (not the crate name)
+//! so the default XDG path resolves to `himalaya/config.toml`, allowing
+//! the same file to back both binaries.
+//!
+//! [`himalaya`]: https://github.com/pimalaya/himalaya
+
 use std::{collections::HashMap, fs, path::Path, path::PathBuf};
 
 use anyhow::{Context, Result};
 use pimalaya_config::{
     secret::{Secret, SecretError},
-    toml::{shell_expanded_string, TomlConfig},
+    toml::{TomlConfig, shell_expanded_string},
 };
 use pimalaya_stream::{
     sasl::{
@@ -228,7 +255,7 @@ pub fn parse_jmap_server(server: &str) -> Result<Url> {
 
 #[cfg(feature = "jmap")]
 pub fn jmap_http_auth(config: JmapAuthConfig) -> Result<secrecy::SecretString> {
-    use base64::{prelude::BASE64_STANDARD, Engine};
+    use base64::{Engine, prelude::BASE64_STANDARD};
     use secrecy::ExposeSecret;
 
     match config {
