@@ -1,11 +1,13 @@
 use std::{fs::File, io, path::PathBuf, time::Duration};
 
 use anyhow::{anyhow, Result};
+use clap::Parser;
 use edtui::{
     actions::{system_editor, Execute, OpenSystemEditor},
     EditorEventHandler,
 };
 use himalaya_tui::app::{App, ComposeAction, Dialog, EnvelopeAction, Panel};
+use himalaya_tui::cli::HimalayaTuiCli;
 use himalaya_tui::config::{AccountConfig, Config};
 use himalaya_tui::ui;
 #[cfg(all(feature = "imap", feature = "smtp", feature = "jmap"))]
@@ -29,6 +31,8 @@ use ratatui::{
 // ── Entry point ──────────────────────────────────────────────────────────────
 
 fn main() -> Result<()> {
+    let cli = HimalayaTuiCli::parse();
+
     let log_file = File::create("/tmp/himalaya-tui.log")?;
     simplelog::WriteLogger::init(
         simplelog::LevelFilter::Trace,
@@ -36,20 +40,29 @@ fn main() -> Result<()> {
         log_file,
     )?;
 
-    let config_paths = get_config_paths();
-    let account_name = std::env::args().nth(1);
-
     // Resolve config (loaded from disk if present, otherwise built
     // in-memory by the wizard) in normal terminal mode so inquire
     // prompts can render. The TUI's alternate screen kicks in after
     // the client is built.
-    let (app, client) = match load_then_connect(&config_paths, account_name.as_deref()) {
+    let (mut app, client) = match load_then_connect(
+        &cli.config_paths,
+        cli.account.as_deref(),
+        cli.no_config,
+        cli.from.as_deref(),
+    ) {
         Ok(setup) => setup,
         Err(err) => {
             eprintln!("Error: {err:?}");
             return Ok(());
         }
     };
+
+    if let Some(from) = cli.from {
+        app.from = Some(from);
+    }
+    if let Some(from_name) = cli.from_name {
+        app.from_name = Some(from_name);
+    }
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -73,64 +86,67 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn get_config_paths() -> Vec<PathBuf> {
-    if let Ok(paths) = std::env::var("HIMALAYA_CONFIG") {
-        paths
-            .split(':')
-            .filter_map(|p| {
-                let expanded = shellexpand::full(p).ok()?;
-                Some(PathBuf::from(expanded.as_ref()))
-            })
-            .collect()
-    } else {
-        Vec::new()
-    }
-}
-
 // ── Startup ──────────────────────────────────────────────────────────────────
 
 /// Loads an account config from disk when one exists at the standard
 /// paths (or `$HIMALAYA_CONFIG`), otherwise runs the wizard to build
 /// one in memory. The wizard never writes to disk; users who want to
 /// skip it should create their own config file.
+///
+/// `account_or_seed` carries the CLI positional. When a config is
+/// found, it is matched against the `[accounts]` table; otherwise it
+/// is fed to the wizard as an email/URL/domain seed. When `no_config`
+/// is set, the on-disk lookup is bypassed entirely and the wizard
+/// runs unconditionally. `from` (the CLI `--from` flag) is forwarded
+/// to the wizard to prefill SASL/JMAP login prompts.
 fn load_then_connect(
     config_paths: &[PathBuf],
-    account_name: Option<&str>,
+    account_or_seed: Option<&str>,
+    no_config: bool,
+    from: Option<&str>,
 ) -> Result<(App, EmailClientStd)> {
-    let (name, mut account_config, display_name, signature) =
-        match Config::from_paths_or_default(config_paths)? {
-            Some(mut config) => {
-                let (name, account) = config
-                    .take_account(account_name)?
-                    .ok_or_else(|| anyhow!("Account not found"))?;
-                let display = config.display_name.take().unwrap_or_default();
-                let sig = config.signature.take().unwrap_or_default();
-                (name, account, display, sig)
-            }
-            None => {
-                let account = run_wizard()?;
-                ("default".to_string(), account, String::new(), String::new())
-            }
-        };
+    let loaded = if no_config {
+        None
+    } else {
+        Config::from_paths_or_default(config_paths)?
+    };
 
-    let email = account_config.email.clone();
-    let display_name = account_config.display_name.take().unwrap_or(display_name);
+    let (name, mut account_config, display_name, signature) = match loaded {
+        Some(mut config) => {
+            let display = config.display_name.take();
+            let sig = config.signature.take().unwrap_or_default();
+            let (name, account) = config
+                .take_account(account_or_seed)?
+                .ok_or_else(|| anyhow!("Account not found"))?;
+            (name, account, display, sig)
+        }
+        None => {
+            let account = run_wizard(account_or_seed, from)?;
+            ("default".to_string(), account, None, String::new())
+        }
+    };
+
+    let from = account_config.from.clone();
+    let from_name = account_config.from_name.take().or(display_name);
     let signature = account_config.signature.take().unwrap_or(signature);
     let smtp_config = account_config.smtp.clone();
 
     let client = build_client(account_config)?;
 
-    let app = App::new(name, email, display_name, signature, smtp_config);
+    let app = App::new(name, from, from_name, signature, smtp_config);
     Ok((app, client))
 }
 
 #[cfg(all(feature = "imap", feature = "smtp", feature = "jmap"))]
-fn run_wizard() -> Result<AccountConfig> {
-    wizard::discover::run()
+fn run_wizard(seed: Option<&str>, from: Option<&str>) -> Result<AccountConfig> {
+    match seed {
+        Some(seed) => wizard::discover::run_with_input(seed, from),
+        None => wizard::discover::run(from),
+    }
 }
 
 #[cfg(not(all(feature = "imap", feature = "smtp", feature = "jmap")))]
-fn run_wizard() -> Result<AccountConfig> {
+fn run_wizard(_seed: Option<&str>, _from: Option<&str>) -> Result<AccountConfig> {
     Err(anyhow!(
         "No config found and the wizard requires imap+smtp+jmap features."
     ))

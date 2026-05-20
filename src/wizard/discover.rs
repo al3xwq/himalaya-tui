@@ -75,15 +75,23 @@ impl DiscoveryResult {
     }
 }
 
-pub fn run() -> Result<AccountConfig> {
+pub fn run(from: Option<&str>) -> Result<AccountConfig> {
     let input = prompt::text::<&str>("Email address, server URL or domain:", None)?;
-    let input = input.trim();
+    run_with_input(input.trim(), from)
+}
 
+/// Same flow as [`run`], but consumes a pre-supplied input (typically
+/// from the CLI positional argument) instead of prompting for one.
+///
+/// `from` is the CLI-provided `--from` address (when any); it seeds
+/// the SASL/JMAP login prompts as a fallback default whenever the
+/// input itself does not already carry a local part.
+pub fn run_with_input(input: &str, from: Option<&str>) -> Result<AccountConfig> {
     match classify(input)? {
         Input::FileUrl(path) => build_maildir_account(path),
-        Input::Url(url) => build_url_account(url),
-        Input::Domain(domain) => build_discovery_account(None, &domain),
-        Input::Email { local, domain } => build_discovery_account(Some(&local), &domain),
+        Input::Url(url) => build_url_account(url, from),
+        Input::Domain(domain) => build_discovery_account(None, &domain, from),
+        Input::Email { local, domain } => build_discovery_account(Some(&local), &domain, from),
     }
 }
 
@@ -134,8 +142,8 @@ fn build_maildir_account(root: PathBuf) -> Result<AccountConfig> {
 
     Ok(AccountConfig {
         default: true,
-        email: String::new(),
-        display_name: None,
+        from: None,
+        from_name: None,
         signature: None,
         signature_delim: None,
         downloads_dir: None,
@@ -148,7 +156,7 @@ fn build_maildir_account(root: PathBuf) -> Result<AccountConfig> {
 
 // ── URL input ───────────────────────────────────────────────────────────────
 
-fn build_url_account(url: Url) -> Result<AccountConfig> {
+fn build_url_account(url: Url, from: Option<&str>) -> Result<AccountConfig> {
     let scheme = url.scheme().to_ascii_lowercase();
     let host = url
         .host_str()
@@ -161,10 +169,10 @@ fn build_url_account(url: Url) -> Result<AccountConfig> {
         // backends come from whatever pacc/autoconfig/srv returns.
         "imap" | "imaps" | "smtp" | "smtps" => {
             let domain = extract_discovery_domain(&host);
-            build_discovery_account(None, domain)
+            build_discovery_account(None, domain, from)
         }
         "jmap" | "jmaps" | "https" => {
-            let auth = prompt_jmap_auth(None)?;
+            let auth = prompt_jmap_auth(from)?;
             let jmap = JmapConfig {
                 server: url.to_string(),
                 tls: Default::default(),
@@ -190,7 +198,11 @@ fn extract_discovery_domain(host: &str) -> &str {
 
 // ── Domain / email input (first-hit-wins discovery, no picker) ──────────────
 
-fn build_discovery_account(local_part: Option<&str>, domain: &str) -> Result<AccountConfig> {
+fn build_discovery_account(
+    local_part: Option<&str>,
+    domain: &str,
+    from: Option<&str>,
+) -> Result<AccountConfig> {
     let result = discover(local_part, domain);
     if result.is_empty() {
         bail!(
@@ -201,7 +213,12 @@ fn build_discovery_account(local_part: Option<&str>, domain: &str) -> Result<Acc
 
     let DiscoveryResult { jmap, imap, smtp } = result;
 
-    let login_default = local_part.map(|l| format!("{l}@{domain}"));
+    // A local part embedded in the wizard input wins over `--from`:
+    // the user is logging into the address they typed, not the one
+    // they happen to send mail as.
+    let login_default = local_part
+        .map(|l| format!("{l}@{domain}"))
+        .or_else(|| from.map(String::from));
 
     if let Some(jmap_endpoint) = jmap {
         let auth = prompt_jmap_auth(login_default.as_deref())?;
@@ -234,8 +251,8 @@ fn build_discovery_account(local_part: Option<&str>, domain: &str) -> Result<Acc
 
     Ok(AccountConfig {
         default: true,
-        email: String::new(),
-        display_name: None,
+        from: None,
+        from_name: None,
         signature: None,
         signature_delim: None,
         downloads_dir: None,
@@ -386,8 +403,8 @@ fn build_smtp_config(host: &str, port: u16, starttls: bool, sasl: SaslConfig) ->
 fn account_jmap_only(jmap: JmapConfig) -> AccountConfig {
     AccountConfig {
         default: true,
-        email: String::new(),
-        display_name: None,
+        from: None,
+        from_name: None,
         signature: None,
         signature_delim: None,
         downloads_dir: None,

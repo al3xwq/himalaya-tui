@@ -135,8 +135,8 @@ pub struct App {
     pub envelope_total: u32,
     pub selected_mailbox: Option<String>,
     pub account_name: String,
-    pub email: String,
-    pub display_name: String,
+    pub from: Option<String>,
+    pub from_name: Option<String>,
     pub signature: String,
     pub smtp_config: Option<SmtpConfig>,
     pub status_message: Option<String>,
@@ -163,8 +163,8 @@ impl Default for App {
             envelope_total: 0,
             selected_mailbox: None,
             account_name: String::new(),
-            email: String::new(),
-            display_name: String::new(),
+            from: None,
+            from_name: None,
             signature: String::new(),
             smtp_config: None,
             status_message: None,
@@ -182,15 +182,15 @@ impl Default for App {
 impl App {
     pub fn new(
         account_name: String,
-        email: String,
-        display_name: String,
+        from: Option<String>,
+        from_name: Option<String>,
         signature: String,
         smtp_config: Option<SmtpConfig>,
     ) -> Self {
         Self {
             account_name,
-            email,
-            display_name,
+            from,
+            from_name,
             signature,
             smtp_config,
             status_message: Some("Loading mailboxes...".into()),
@@ -403,8 +403,8 @@ impl App {
 
     pub fn start_compose(&mut self) {
         let tpl = TemplateBuilderCompose {
-            from: self.email.clone(),
-            from_name: Some(self.display_name.clone()),
+            from: self.from.clone().unwrap_or_default(),
+            from_name: self.from_name.clone(),
             signature: self.signature.clone(),
             ..Default::default()
         }
@@ -423,8 +423,8 @@ impl App {
         };
 
         let tpl = TemplateBuilderReply {
-            from: self.email.clone(),
-            from_name: Some(self.display_name.clone()),
+            from: self.from.clone().unwrap_or_default(),
+            from_name: self.from_name.clone(),
             signature: self.signature.clone(),
             reply_all,
             ..Default::default()
@@ -444,8 +444,8 @@ impl App {
         };
 
         let tpl = TemplateBuilderForward {
-            from: self.email.clone(),
-            from_name: Some(self.display_name.clone()),
+            from: self.from.clone().unwrap_or_default(),
+            from_name: self.from_name.clone(),
             signature: self.signature.clone(),
             ..Default::default()
         }

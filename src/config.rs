@@ -15,8 +15,12 @@ use serde::{Deserialize, Serialize};
 #[cfg(any(feature = "imap", feature = "smtp", feature = "jmap"))]
 use url::Url;
 
+/// `deny_unknown_fields` is intentionally omitted so the same TOML
+/// file can be shared with the `himalaya` CLI: top-level CLI-only
+/// sections (`table`, `envelope`, `mailbox`, `message`, `attachment`,
+/// `account`) are silently ignored here.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 pub struct Config {
     #[serde(alias = "name")]
     pub display_name: Option<String>,
@@ -49,8 +53,11 @@ impl Config {
 impl TomlConfig for Config {
     type Account = AccountConfig;
 
+    /// Hard-coded to `"himalaya"` (not `CARGO_PKG_NAME`) so the TUI's
+    /// default XDG path resolves to the same `himalaya/config.toml`
+    /// the CLI uses, allowing one shared configuration file.
     fn project_name() -> &'static str {
-        env!("CARGO_PKG_NAME")
+        "himalaya"
     }
 
     fn take_named_account(&mut self, name: &str) -> Option<(String, Self::Account)> {
@@ -66,8 +73,11 @@ impl TomlConfig for Config {
     }
 }
 
+/// `deny_unknown_fields` is omitted so per-account CLI-only sections
+/// (`table`, `envelope`, `mailbox`, `attachment`) coexist in the same
+/// `[accounts.<name>]` block.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 pub struct AccountConfig {
     #[serde(default)]
     pub default: bool,
@@ -75,9 +85,8 @@ pub struct AccountConfig {
     pub smtp: Option<SmtpConfig>,
     pub jmap: Option<JmapConfig>,
     pub maildir: Option<MaildirConfig>,
-    #[serde(deserialize_with = "shell_expanded_string")]
-    pub email: String,
-    pub display_name: Option<String>,
+    pub from: Option<String>,
+    pub from_name: Option<String>,
     pub signature: Option<String>,
     pub signature_delim: Option<String>,
     pub downloads_dir: Option<PathBuf>,
@@ -177,8 +186,11 @@ pub fn parse_smtp_server(server: &str) -> Result<Url> {
     }
 }
 
+/// `deny_unknown_fields` is omitted so CLI-only JMAP fields
+/// (`identity-id`, `drafts-mailbox-id`) survive when the same block
+/// is reused by the CLI.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 pub struct JmapConfig {
     /// JMAP server address. Either a bare authority for `/.well-known/jmap`
     /// discovery, or a full session-endpoint URL.

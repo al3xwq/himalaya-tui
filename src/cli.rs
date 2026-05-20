@@ -1,0 +1,61 @@
+use std::path::PathBuf;
+
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[command(name = env!("CARGO_PKG_NAME"))]
+#[command(author, version, about)]
+pub struct HimalayaTuiCli {
+    /// Existing account name, or a wizard seed when no config is found.
+    ///
+    /// When a configuration file exists at `--config` (or at the
+    /// standard path), the value is matched against the `[accounts]`
+    /// table. When no configuration is found, the value seeds the
+    /// wizard and may be an email address, a `file://` Maildir URL, an
+    /// `imap[s]://`/`smtp[s]://`/`https://` URL, or a bare domain.
+    #[arg(value_name = "ACCOUNT")]
+    pub account: Option<String>,
+
+    /// Override the default configuration file path.
+    ///
+    /// The given paths are shell-expanded then canonicalized (if
+    /// applicable). If the first path does not point to a valid file,
+    /// the wizard is run to build a config in memory. Other paths are
+    /// merged with the first one, which allows you to separate your
+    /// public config from your private(s) one(s). Multiple paths can
+    /// also be provided by delimiting them with `:` (like `$PATH` in
+    /// a POSIX shell).
+    #[arg(short, long = "config", env = "HIMALAYA_CONFIG")]
+    #[arg(value_name = "PATH", value_parser = path_parser, value_delimiter = ':')]
+    pub config_paths: Vec<PathBuf>,
+
+    /// Skip configuration file lookup and run the wizard.
+    ///
+    /// Useful when a config already exists on disk but you want a
+    /// throwaway, in-memory account for this run (e.g. to try another
+    /// server, or hand off the TUI to someone else without exposing
+    /// your stored credentials). The wizard never writes to disk;
+    /// `--config` and `HIMALAYA_CONFIG` are ignored when this flag is
+    /// set.
+    #[arg(long = "no-config")]
+    pub no_config: bool,
+
+    /// Override the From address used when sending or saving drafts.
+    #[arg(long, value_name = "EMAIL")]
+    pub from: Option<String>,
+
+    /// Override the From display name used when sending or saving
+    /// drafts.
+    #[arg(long = "from-name", value_name = "NAME")]
+    pub from_name: Option<String>,
+}
+
+fn path_parser(path: &str) -> Result<PathBuf, String> {
+    match shellexpand::full(path) {
+        Ok(path) => {
+            let path = PathBuf::from(&*path);
+            Ok(path.canonicalize().unwrap_or(path))
+        }
+        Err(err) => Err(err.to_string()),
+    }
+}
