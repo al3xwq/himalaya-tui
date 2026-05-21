@@ -42,6 +42,8 @@ use serde::{Deserialize, Serialize};
 #[cfg(any(feature = "imap", feature = "smtp", feature = "jmap"))]
 use url::Url;
 
+use crate::app::Keybinds;
+
 /// `deny_unknown_fields` is intentionally omitted so the same TOML
 /// file can be shared with the `himalaya` CLI: top-level CLI-only
 /// sections (`table`, `envelope`, `mailbox`, `message`, `attachment`,
@@ -54,6 +56,9 @@ pub struct Config {
     pub signature: Option<String>,
     pub signature_delim: Option<String>,
     pub downloads_dir: Option<PathBuf>,
+    /// Composer keybinding flavor (Vim or Emacs). The CLI `--keybinds`
+    /// flag overrides this; both default to Vim when omitted.
+    pub keybinds: Option<Keybinds>,
     pub accounts: HashMap<String, AccountConfig>,
 }
 

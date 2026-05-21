@@ -21,14 +21,40 @@
 //! dialog, compose buffer and account identity. The render functions
 //! in [`crate::ui`] read it; the event loop in `main.rs` mutates it.
 
-use edtui::{EditorMode, EditorState, Lines};
+use clap::ValueEnum;
+use edtui::{EditorEventHandler, EditorMode, EditorState, Lines};
 use io_email::{envelope::Envelope, flag::Flag, mailbox::Mailbox};
 use mml::template::{
     compose::builder::TemplateBuilderCompose, forward::builder::TemplateBuilderForward,
     reply::builder::TemplateBuilderReply, types::TemplateCursor,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::config::SmtpConfig;
+
+/// Keybinding flavor applied to the in-app composer.
+///
+/// Mirrors `edtui::EditorEventHandler::{vim_mode, emacs_mode}` and is
+/// shared between the CLI flag, the TOML config and the [`App`] state
+/// so the event loop can also gate its own intercepts (notably
+/// `Ctrl-e`, which collides with Emacs' "move to end of line").
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize, ValueEnum)]
+#[serde(rename_all = "kebab-case")]
+pub enum Keybinds {
+    #[default]
+    Vim,
+    Emacs,
+}
+
+impl Keybinds {
+    /// Builds the edtui event handler that matches this flavor.
+    pub fn editor_handler(self) -> EditorEventHandler {
+        match self {
+            Self::Vim => EditorEventHandler::vim_mode(),
+            Self::Emacs => EditorEventHandler::emacs_mode(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Panel {
@@ -168,8 +194,14 @@ pub struct App {
     pub message_scroll: u16,
     pub previewing_compose: bool,
     pub editor_state: EditorState,
+    pub editor_handler: EditorEventHandler,
     pub dialog: Option<Dialog>,
     pub dialog_index: usize,
+    /// `None` means the global translation layer is inactive and only
+    /// the universal keys (arrows, PageUp/Down, Tab, Esc, Enter, ...)
+    /// fire. The composer still defaults to edtui's Vim handler so
+    /// typing works the same way.
+    pub keybinds: Option<Keybinds>,
 }
 
 impl Default for App {
@@ -196,8 +228,10 @@ impl Default for App {
             message_scroll: 0,
             previewing_compose: false,
             editor_state: EditorState::new(Lines::from("")),
+            editor_handler: Keybinds::default().editor_handler(),
             dialog: None,
             dialog_index: 0,
+            keybinds: None,
         }
     }
 }
@@ -209,13 +243,19 @@ impl App {
         from_name: Option<String>,
         signature: String,
         smtp_config: Option<SmtpConfig>,
+        keybinds: Option<Keybinds>,
     ) -> Self {
+        // edtui can only be Vim or Emacs, so map the absent case to
+        // its default (Vim) for the composer.
+        let editor_handler = keybinds.unwrap_or_default().editor_handler();
         Self {
             account_name,
             from,
             from_name,
             signature,
             smtp_config,
+            editor_handler,
+            keybinds,
             status_message: Some("Loading mailboxes...".into()),
             ..Self::default()
         }

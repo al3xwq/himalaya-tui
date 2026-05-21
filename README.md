@@ -109,6 +109,7 @@ CLI flags (see `himalaya-tui --help`):
 - `--no-config`: skip on-disk config and run the wizard
 - `--from <EMAIL>`: override the From address used when sending; also prefills the wizard's SASL/JMAP login
 - `--from-name <NAME>`: override the From display name
+- `--keybinds <vim|emacs>`: composer keybinding flavor (overrides the top-level `keybinds` TOML field; defaults to Vim)
 
 ## Usage
 
@@ -116,21 +117,27 @@ CLI flags (see `himalaya-tui --help`):
 
 Top-level navigation:
 
-| Key | Action |
-|---|---|
-| `Tab` | Cycle between Mailboxes, Envelopes and the bottom panel |
-| `↑` / `↓` | Move within the active panel |
-| `PageUp` / `PageDown` | Paginate envelopes |
-| `Enter` | Select mailbox; open envelope actions dialog; toggle bottom panel |
-| `Esc` | Close current panel, dialog or quit |
-| `Ctrl-c` | Start a new draft |
+| Action | Universal | Vim flavor | Emacs flavor |
+|---|---|---|---|
+| Cycle panel | `Tab` | `Tab` | `Tab` |
+| Next item | `↓` | `j` | `Ctrl-n` |
+| Previous item | `↑` | `k` | `Ctrl-p` |
+| Next page | `PageDown` | `Ctrl-d` | `Ctrl-v` |
+| Previous page | `PageUp` | `Ctrl-u` | `Alt-v` |
+| Select | `Enter` | `Enter` | `Enter` |
+| Close panel / dialog / quit | `Esc` | `q` | `Ctrl-g` |
+| Start a new draft | `Ctrl-c` | `Ctrl-c` | `Ctrl-c` |
+
+By default, only the universal keys fire. Opt into a flavor with `--keybinds <vim|emacs>` (or the top-level `keybinds = "emacs"` TOML field) to enable the matching column as additive aliases.
 
 Composer:
 
 | Key | Action |
 |---|---|
-| `Alt-e` | Hand off to `$EDITOR` for the current draft |
+| `Ctrl-e` (Vim) / `Alt-e` | Hand off to `$VISUAL` or `$EDITOR` for the current draft |
 | `Esc` | Open the compose actions dialog (Send, Preview, Save to Drafts, Cancel) |
+
+Inside the composer, the chosen flavor drives [edtui](https://crates.io/crates/edtui)'s built-in keybindings (Vim normal/insert vs. Emacs insert-style). In Vim mode, `Ctrl-e` (edtui's normal-mode binding) opens the external editor; in Emacs mode, `Ctrl-e` is rebound to "move to end of line" and `Alt-e` is the only system-editor key.
 
 Envelope dialog actions: Read, Reply, Reply All, Forward, Copy, Move, Add flag, Remove flag.
 

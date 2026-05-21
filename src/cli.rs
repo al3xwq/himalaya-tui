@@ -21,6 +21,8 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
+use crate::app::Keybinds;
+
 #[derive(Parser, Debug)]
 #[command(name = env!("CARGO_PKG_NAME"))]
 #[command(author, version, about)]
@@ -67,6 +69,13 @@ pub struct HimalayaTuiCli {
     /// drafts.
     #[arg(long = "from-name", value_name = "NAME")]
     pub from_name: Option<String>,
+
+    /// Keybinding flavor applied to the in-app composer.
+    ///
+    /// When omitted, falls back to the top-level `keybinds` field in
+    /// the TOML config (if present), otherwise to Vim.
+    #[arg(long, value_name = "FLAVOR", value_enum)]
+    pub keybinds: Option<Keybinds>,
 }
 
 fn path_parser(path: &str) -> Result<PathBuf, String> {

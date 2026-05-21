@@ -7,7 +7,7 @@
 pimalaya.mkDefault (
   {
     src = ./.;
-    version = "0.1.0";
+    version = "0.0.1";
     mkPackage = (
       {
         lib,
@@ -19,7 +19,7 @@ pimalaya.mkDefault (
       }:
       rustPlatform.buildRustPackage {
         pname = "himalaya-tui";
-        version = "0.1.0";
+        version = "0.0.1";
         src = ./.;
 
         buildNoDefaultFeatures = !defaultFeatures;
@@ -42,7 +42,7 @@ pimalaya.mkDefault (
           description = "TUI to manage emails";
           homepage = "https://pimalaya.org";
           license = licenses.mit;
-          maintainers = with maintainers; [ ];
+          maintainers = with maintainers; [ soywod ];
         };
       }
     );

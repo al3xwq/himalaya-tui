@@ -19,11 +19,8 @@ use std::{fs::File, io, path::PathBuf, time::Duration};
 
 use anyhow::{Result, anyhow};
 use clap::Parser;
-use edtui::{
-    EditorEventHandler,
-    actions::{Execute, OpenSystemEditor, system_editor},
-};
-use himalaya_tui::app::{App, ComposeAction, Dialog, EnvelopeAction, Panel};
+use edtui::actions::{Execute, OpenSystemEditor, system_editor};
+use himalaya_tui::app::{App, ComposeAction, Dialog, EnvelopeAction, Keybinds, Panel};
 use himalaya_tui::cli::HimalayaTuiCli;
 use himalaya_tui::config::{AccountConfig, Config};
 use himalaya_tui::ui;
@@ -66,6 +63,7 @@ fn main() -> Result<()> {
         cli.account.as_deref(),
         cli.no_config,
         cli.from.as_deref(),
+        cli.keybinds,
     ) {
         Ok(setup) => setup,
         Err(err) => {
@@ -121,6 +119,7 @@ fn load_then_connect(
     account_or_seed: Option<&str>,
     no_config: bool,
     from: Option<&str>,
+    keybinds_cli: Option<Keybinds>,
 ) -> Result<(App, EmailClientStd)> {
     let loaded = if no_config {
         None
@@ -128,18 +127,19 @@ fn load_then_connect(
         Config::from_paths_or_default(config_paths)?
     };
 
-    let (name, mut account_config, display_name, signature) = match loaded {
+    let (name, mut account_config, display_name, signature, keybinds_config) = match loaded {
         Some(mut config) => {
             let display = config.display_name.take();
             let sig = config.signature.take().unwrap_or_default();
+            let keybinds = config.keybinds;
             let (name, account) = config
                 .take_account(account_or_seed)?
                 .ok_or_else(|| anyhow!("Account not found"))?;
-            (name, account, display, sig)
+            (name, account, display, sig, keybinds)
         }
         None => {
             let account = run_wizard(account_or_seed, from)?;
-            ("default".to_string(), account, None, String::new())
+            ("default".to_string(), account, None, String::new(), None)
         }
     };
 
@@ -148,9 +148,12 @@ fn load_then_connect(
     let signature = account_config.signature.take().unwrap_or(signature);
     let smtp_config = account_config.smtp.clone();
 
+    // CLI > config; `None` keeps the global translation layer off.
+    let keybinds = keybinds_cli.or(keybinds_config);
+
     let client = build_client(account_config)?;
 
-    let app = App::new(name, from, from_name, signature, smtp_config);
+    let app = App::new(name, from, from_name, signature, smtp_config, keybinds);
     Ok((app, client))
 }
 
@@ -255,13 +258,56 @@ fn load_envelopes(app: &mut App, client: &mut EmailClientStd) {
 
 const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(60);
 
+/// Maps mode-specific navigation shortcuts onto the universal keys
+/// (`Up`, `Down`, `PageUp`, `PageDown`, `Esc`) consumed by the dialog
+/// and global event branches. Returns the original event when no
+/// flavor was configured or when no translation applies.
+///
+/// Emacs flavor: `Ctrl-n`/`Ctrl-p` (line nav), `Ctrl-v`/`Alt-v`
+/// (page nav), `Ctrl-g` (cancel).
+///
+/// Vim flavor: `j`/`k` (line nav), `Ctrl-d`/`Ctrl-u` (page nav), `q`
+/// (cancel).
+fn translate_key(key: event::KeyEvent, kb: Option<Keybinds>) -> event::KeyEvent {
+    let Some(kb) = kb else { return key };
+    let modifiers = key.modifiers;
+    let translated = match kb {
+        Keybinds::Emacs if modifiers == KeyModifiers::CONTROL => match key.code {
+            KeyCode::Char('n') => Some(KeyCode::Down),
+            KeyCode::Char('p') => Some(KeyCode::Up),
+            KeyCode::Char('v') => Some(KeyCode::PageDown),
+            KeyCode::Char('g') => Some(KeyCode::Esc),
+            _ => None,
+        },
+        Keybinds::Emacs if modifiers == KeyModifiers::ALT => match key.code {
+            KeyCode::Char('v') => Some(KeyCode::PageUp),
+            _ => None,
+        },
+        Keybinds::Vim if modifiers == KeyModifiers::NONE => match key.code {
+            KeyCode::Char('j') => Some(KeyCode::Down),
+            KeyCode::Char('k') => Some(KeyCode::Up),
+            KeyCode::Char('q') => Some(KeyCode::Esc),
+            _ => None,
+        },
+        Keybinds::Vim if modifiers == KeyModifiers::CONTROL => match key.code {
+            KeyCode::Char('d') => Some(KeyCode::PageDown),
+            KeyCode::Char('u') => Some(KeyCode::PageUp),
+            _ => None,
+        },
+        _ => None,
+    };
+
+    match translated {
+        Some(code) => event::KeyEvent::new(code, KeyModifiers::NONE),
+        None => key,
+    }
+}
+
 fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
     client: &mut EmailClientStd,
 ) -> Result<()> {
-    let mut editor_handler = EditorEventHandler::default();
-
     while app.running {
         if app.active_panel == Panel::Compose && system_editor::is_pending(&app.editor_state) {
             system_editor::open(&mut app.editor_state, terminal)?;
@@ -274,10 +320,21 @@ fn run_app(
             continue;
         }
 
-        if let Event::Key(key) = event::read()? {
-            if key.kind != KeyEventKind::Press {
+        if let Event::Key(raw_key) = event::read()? {
+            if raw_key.kind != KeyEventKind::Press {
                 continue;
             }
+
+            // The composer hands raw keys to edtui (which already knows
+            // Vim vs Emacs); every other branch goes through the
+            // translation layer so Ctrl-n/Ctrl-p (Emacs) or j/k (Vim)
+            // alias the universal arrow/page keys.
+            let in_composer = app.dialog.is_none() && app.active_panel == Panel::Compose;
+            let key = if in_composer {
+                raw_key
+            } else {
+                translate_key(raw_key, app.keybinds)
+            };
 
             if let Some(dialog) = app.dialog {
                 match dialog {
@@ -291,7 +348,7 @@ fn run_app(
                 continue;
             }
 
-            if app.active_panel == Panel::Compose {
+            if in_composer {
                 if key.code == KeyCode::Esc {
                     app.open_dialog(Dialog::Compose);
                     continue;
@@ -300,7 +357,7 @@ fn run_app(
                 if key.code == KeyCode::Char('e') && key.modifiers.contains(KeyModifiers::ALT) {
                     OpenSystemEditor.execute(&mut app.editor_state);
                 } else {
-                    editor_handler.on_key_event(key, &mut app.editor_state);
+                    app.editor_handler.on_key_event(key, &mut app.editor_state);
                 }
 
                 if system_editor::is_pending(&app.editor_state) {
