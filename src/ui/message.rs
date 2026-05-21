@@ -19,12 +19,12 @@ use ratatui::{
     Frame,
     layout::Rect,
     text::{Line, Text},
-    widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
+    widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
 };
 
 use crate::app::{App, Panel};
 
-use super::get_border_style;
+use super::layout::get_border_style;
 
 pub fn render_message(frame: &mut Frame, app: &App, area: Rect) {
     let content = app
@@ -44,14 +44,17 @@ pub fn render_message(frame: &mut Frame, app: &App, area: Rect) {
     let max_scroll = total_lines.saturating_sub(inner_height);
     let scroll = app.message_scroll.min(max_scroll);
 
+    // `Wrap { trim: false }` preserves indentation when a line spills
+    // over the right edge; long header lines and quoted blocks stay
+    // legible instead of falling off the panel.
     let paragraph = Paragraph::new(Text::from(lines))
         .block(block)
         .scroll((scroll, 0))
+        .wrap(Wrap { trim: false })
         .style(app.theme.message_body);
 
     frame.render_widget(paragraph, area);
 
-    // Render scrollbar if content exceeds visible area
     if total_lines > inner_height {
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
             .begin_symbol(Some("↑"))

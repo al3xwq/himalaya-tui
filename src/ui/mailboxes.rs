@@ -23,7 +23,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState},
 };
 
-use super::get_border_style;
+use super::layout::get_border_style;
 use crate::app::{App, Panel};
 
 pub fn render_mailboxes(frame: &mut Frame, app: &mut App, area: Rect) {

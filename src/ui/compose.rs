@@ -22,13 +22,22 @@ use ratatui::{
     widgets::{Block, Borders, Widget},
 };
 
-use crate::app::{App, Panel};
+use crate::app::{App, Keybinds, Panel};
 
-use super::get_border_style;
+use super::layout::get_border_style;
 
 pub fn render_compose(frame: &mut Frame, app: &mut App, area: Rect) {
+    // Vim binds both `Ctrl-e` (edtui's normal-mode shortcut) and
+    // `Alt-e`; Emacs binds only `Alt-e` because `Ctrl-e` is taken by
+    // "move to end of line".
+    let editor_hint = match app.keybinds.unwrap_or_default() {
+        Keybinds::Vim => "Ctrl-e or Alt-e: open in $EDITOR",
+        Keybinds::Emacs => "Alt-e: open in $EDITOR",
+    };
+    let title = format!(" Compose (Esc: actions, {editor_hint}) ");
+
     let block = Block::default()
-        .title(" Compose (Esc: actions) ")
+        .title(title)
         .borders(Borders::ALL)
         .border_style(get_border_style(app, Panel::Compose));
 

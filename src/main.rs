@@ -24,7 +24,7 @@ use edtui::actions::{Execute, OpenSystemEditor, system_editor};
 use himalaya_tui::wizard;
 use himalaya_tui::{
     app::{App, ComposeAction, Dialog, EnvelopeAction, Keybinds, Panel},
-    cli::HimalayaTuiCli,
+    cli::HimalayaTui,
     config::{AccountConfig, Config},
     ui,
 };
@@ -48,7 +48,7 @@ use ratatui::{
 // ── Entry point ──────────────────────────────────────────────────────────────
 
 fn main() -> Result<()> {
-    let cli = HimalayaTuiCli::parse();
+    let cli = HimalayaTui::parse();
 
     // Auxiliary subcommands (completions, manuals) run before the TUI
     // ever starts and print to stdout.
@@ -70,7 +70,7 @@ fn main() -> Result<()> {
     // the client is built.
     let (mut app, client) = match load_then_connect(
         &cli.config_paths,
-        cli.account.as_deref(),
+        cli.account.name.as_deref(),
         cli.no_config,
         cli.from.as_deref(),
         cli.keybinds,
@@ -166,7 +166,10 @@ fn load_then_connect(
     let signature = account_config.signature.take().unwrap_or(signature);
     let smtp_config = account_config.smtp.clone();
 
-    // CLI > config; `None` keeps the global translation layer off.
+    // CLI > config; `None` falls back to the composer's default Vim
+    // handler. Top-level navigation no longer depends on this value:
+    // Vim and Emacs aliases are always active alongside the universal
+    // keys.
     let keybinds = keybinds_cli.or(keybinds_config);
 
     let client = build_client(account_config)?;
@@ -246,7 +249,7 @@ fn run(
     mut client: EmailClientStd,
 ) -> Result<()> {
     app.set_status("Connecting...");
-    terminal.draw(|f| ui::render(f, &mut app))?;
+    terminal.draw(|f| ui::layout::render(f, &mut app))?;
 
     match client.list_mailboxes(false) {
         Ok(mailboxes) => {
@@ -287,37 +290,38 @@ const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(60);
 /// Maps mode-specific navigation shortcuts onto the universal keys
 /// (`Up`, `Down`, `PageUp`, `PageDown`, `Esc`) consumed by the dialog
 /// and global event branches. Returns the original event when no
-/// flavor was configured or when no translation applies.
+/// translation applies.
+///
+/// Both Vim and Emacs aliases are always active because they don't
+/// overlap: Vim's flavor uses bare letters (`j`/`k`/`q`) and
+/// `Ctrl-d`/`Ctrl-u`, while Emacs uses `Ctrl-n`/`Ctrl-p`/`Ctrl-v`/
+/// `Ctrl-g` and `Alt-v`. The composer is the only place where the
+/// configured flavor still matters, and it bypasses this translation.
 ///
 /// Emacs flavor: `Ctrl-n`/`Ctrl-p` (line nav), `Ctrl-v`/`Alt-v`
 /// (page nav), `Ctrl-g` (cancel).
 ///
 /// Vim flavor: `j`/`k` (line nav), `Ctrl-d`/`Ctrl-u` (page nav), `q`
 /// (cancel).
-fn translate_key(key: event::KeyEvent, kb: Option<Keybinds>) -> event::KeyEvent {
-    let Some(kb) = kb else { return key };
-    let modifiers = key.modifiers;
-    let translated = match kb {
-        Keybinds::Emacs if modifiers == KeyModifiers::CONTROL => match key.code {
-            KeyCode::Char('n') => Some(KeyCode::Down),
-            KeyCode::Char('p') => Some(KeyCode::Up),
-            KeyCode::Char('v') => Some(KeyCode::PageDown),
-            KeyCode::Char('g') => Some(KeyCode::Esc),
-            _ => None,
-        },
-        Keybinds::Emacs if modifiers == KeyModifiers::ALT => match key.code {
-            KeyCode::Char('v') => Some(KeyCode::PageUp),
-            _ => None,
-        },
-        Keybinds::Vim if modifiers == KeyModifiers::NONE => match key.code {
+fn translate_key(key: event::KeyEvent) -> event::KeyEvent {
+    let translated = match key.modifiers {
+        KeyModifiers::NONE => match key.code {
             KeyCode::Char('j') => Some(KeyCode::Down),
             KeyCode::Char('k') => Some(KeyCode::Up),
             KeyCode::Char('q') => Some(KeyCode::Esc),
             _ => None,
         },
-        Keybinds::Vim if modifiers == KeyModifiers::CONTROL => match key.code {
+        KeyModifiers::CONTROL => match key.code {
+            KeyCode::Char('n') => Some(KeyCode::Down),
+            KeyCode::Char('p') => Some(KeyCode::Up),
+            KeyCode::Char('v') => Some(KeyCode::PageDown),
             KeyCode::Char('d') => Some(KeyCode::PageDown),
             KeyCode::Char('u') => Some(KeyCode::PageUp),
+            KeyCode::Char('g') => Some(KeyCode::Esc),
+            _ => None,
+        },
+        KeyModifiers::ALT => match key.code {
+            KeyCode::Char('v') => Some(KeyCode::PageUp),
             _ => None,
         },
         _ => None,
@@ -340,7 +344,7 @@ fn run_app(
             execute!(terminal.backend_mut(), EnableMouseCapture)?;
         }
 
-        terminal.draw(|f| ui::render(f, app))?;
+        terminal.draw(|f| ui::layout::render(f, app))?;
 
         if !event::poll(KEEPALIVE_INTERVAL)? {
             continue;
@@ -351,15 +355,15 @@ fn run_app(
                 continue;
             }
 
-            // The composer hands raw keys to edtui (which already knows
-            // Vim vs Emacs); every other branch goes through the
+            // The composer hands raw keys to edtui (which already
+            // knows Vim vs Emacs); every other branch goes through the
             // translation layer so Ctrl-n/Ctrl-p (Emacs) or j/k (Vim)
-            // alias the universal arrow/page keys.
+            // alias the universal arrow/page keys unconditionally.
             let in_composer = app.dialog.is_none() && app.active_panel == Panel::Compose;
             let key = if in_composer {
                 raw_key
             } else {
-                translate_key(raw_key, app.keybinds)
+                translate_key(raw_key)
             };
 
             if let Some(dialog) = app.dialog {
@@ -656,10 +660,10 @@ fn handle_compose_dialog(app: &mut App, key: KeyCode, client: &mut EmailClientSt
                     }
                 }
                 ComposeAction::SaveToDrafts => save_to_drafts(app, client),
-                ComposeAction::Cancel => app.close_dialog(),
+                ComposeAction::Cancel => app.cancel_compose(),
             }
         }
-        KeyCode::Esc => app.cancel_compose(),
+        KeyCode::Esc => app.close_dialog(),
         _ => {}
     }
 }

@@ -1409,7 +1409,7 @@ dependencies = [
 [[package]]
 name = "io-email"
 version = "0.0.1"
-source = "git+https://github.com/pimalaya/io-email#046c1c051f497fc84d72763a22abc55d4335ea8a"
+source = "git+https://github.com/pimalaya/io-email#3def9d557ce633575dca8ae4ee494e326a4aecb3"
 dependencies = [
  "chrono",
  "io-imap",
@@ -1459,7 +1459,7 @@ dependencies = [
 [[package]]
 name = "io-jmap"
 version = "0.0.1"
-source = "git+https://github.com/pimalaya/io-jmap#d6f55e8147050bec1a2e809e4e108bd57c03c01c"
+source = "git+https://github.com/pimalaya/io-jmap#a53855723683e0c08269ebaabfd530efceeadb5d"
 dependencies = [
  "anyhow",
  "io-http",

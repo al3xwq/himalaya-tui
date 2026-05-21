@@ -8,6 +8,8 @@
   </p>
 </div>
 
+![screenshot](./screenshot.jpeg)
+
 > [!IMPORTANT]
 > Himalaya TUI is in active development and currently shipped as `v0.0.1`. Expect breaking changes between releases; the CLI counterpart [pimalaya/himalaya](https://github.com/pimalaya/himalaya) remains the stable interface for production use.
 
@@ -158,7 +160,7 @@ Top-level navigation:
 | Close panel / dialog / quit | `Esc` | `q` | `Ctrl-g` |
 | Start a new draft | `Ctrl-c` | `Ctrl-c` | `Ctrl-c` |
 
-By default, only the universal keys fire. Opt into a flavor with `--keybinds <vim|emacs>` (or the top-level `keybinds = "emacs"` TOML field) to enable the matching column as additive aliases.
+All three columns are always active: the Vim and Emacs aliases don't overlap, so they fire alongside the universal keys without any setup. The `--keybinds <vim|emacs>` flag (and the top-level `keybinds = "emacs"` TOML field) only affects the in-app composer's edtui handler; it doesn't gate top-level navigation.
 
 Composer:
 

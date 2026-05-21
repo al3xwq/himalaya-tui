@@ -199,10 +199,11 @@ pub struct App {
     pub editor_handler: EditorEventHandler,
     pub dialog: Option<Dialog>,
     pub dialog_index: usize,
-    /// `None` means the global translation layer is inactive and only
-    /// the universal keys (arrows, PageUp/Down, Tab, Esc, Enter, ...)
-    /// fire. The composer still defaults to edtui's Vim handler so
-    /// typing works the same way.
+    /// Composer flavor. Drives only edtui's event handler (Vim vs
+    /// Emacs insert/normal-mode bindings). Top-level navigation is
+    /// independent: Vim and Emacs aliases are always merged on top of
+    /// the universal keys (arrows, PageUp/Down, Tab, Esc, Enter, ...).
+    /// `None` falls back to the composer's default Vim handler.
     pub keybinds: Option<Keybinds>,
     pub theme: Theme,
 }

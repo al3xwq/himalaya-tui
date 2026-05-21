@@ -22,7 +22,7 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Row, Table, TableState},
 };
 
-use super::get_border_style;
+use super::layout::get_border_style;
 use crate::app::{App, Panel};
 
 pub fn render_envelopes(frame: &mut Frame, app: &mut App, area: Rect) {
