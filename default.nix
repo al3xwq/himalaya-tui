@@ -17,33 +17,12 @@ pimalaya.mkDefault (
         defaultFeatures,
         features,
       }:
-      rustPlatform.buildRustPackage {
-        pname = "himalaya-tui";
-        version = "0.0.1";
-        src = ./.;
-
+      pkgs.callPackage ./package.nix {
+        inherit lib rustPlatform buildPackages;
+        installShellCompletions = false;
+        installManPages = false;
         buildNoDefaultFeatures = !defaultFeatures;
         buildFeatures = lib.splitString "," features;
-
-        cargoLock = {
-          lockFile = ./Cargo.lock;
-          allowBuiltinFetchGit = true;
-        };
-
-        nativeBuildInputs = with pkgs; [
-          pkg-config
-        ];
-
-        buildInputs = with pkgs; [
-          openssl
-        ];
-
-        meta = with lib; {
-          description = "TUI to manage emails";
-          homepage = "https://pimalaya.org";
-          license = licenses.mit;
-          maintainers = with maintainers; [ soywod ];
-        };
       }
     );
   }
