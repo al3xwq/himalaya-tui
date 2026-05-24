@@ -11,7 +11,7 @@
 ![screenshot](./screenshot.jpeg)
 
 > [!CAUTION]
-> Himalaya TUI is in active development and currently shipped as `v0.0.1`. Expect breaking changes between releases; the CLI counterpart [pimalaya/himalaya](https://github.com/pimalaya/himalaya) remains the stable interface for production use.
+> Himalaya TUI is in active development and currently shipped as `v0.0.1`. Expect breaking changes between releases; the [CLI counterpart](https://github.com/pimalaya/himalaya) remains the stable interface for production use.
 
 ## Table of contents
 
@@ -31,21 +31,22 @@
 
 ## Features
 
+- Remote backend support: **IMAP**, **SMTP**, **JMAP**
+- Local (filesystem) backends support: **Maildir** <sup>[specs](https://cr.yp.to/proto/maildir.html)</sup>, **m2dir** <sup>[specs](https://man.sr.ht/~bitfehler/m2dir/)</sup>
+- **Simple auth** support for IMAP/SMTP: anonymous, login, plain, oauthbearer, xoauth2, scram-sha-256
+- **HTTP auth** support for JMAP: basic, bearer
+- **TLS** support:
+  - [Rustls](https://crates.io/crates/rustls) with ring crypto
+  - [Rustls](https://crates.io/crates/rustls) with aws crypto (requires `rustls-aws` feature)
+  - [Native TLS](https://crates.io/crates/native-tls) (requires `native-tls` feature)
+- **Discovery** support:
+  - Autoconfiguration (Thunderbird) <sup>[specs](https://wiki.mozilla.org/Thunderbird:Autoconfiguration)</sup>
+  - PACC <sup>[specs](https://datatracker.ietf.org/doc/html/draft-ietf-mailmaint-pacc)</sup>
+  - SRV DNS lookups <sup>[rfc6186](https://datatracker.ietf.org/doc/html/rfc6186)</sup>
 - **Three-pane layout** built on [ratatui](https://ratatui.rs): mailboxes, envelopes, message body or composer
 - **In-app composer** powered by [edtui](https://crates.io/crates/edtui) with system-editor handoff (`Alt-e`)
 - **Color themes**: built-in presets plus per-field overrides in the config (see [Theming](#theming))
-- **Discovery** support: Autoconfiguration (Thunderbird), PACC and RFC 6186 (SRV lookups)
 - **Shared configuration file** with `himalaya`: same `[accounts.<name>]` blocks load on both binaries (see [Configuration](#configuration))
-- **IMAP** support <sup>[rfc9051](https://www.iana.org/go/rfc9051)</sup> (requires `imap` feature)
-- **JMAP** support <sup>[rfc8620](https://www.iana.org/go/rfc8620), [rfc8621](https://www.iana.org/go/rfc8621)</sup> (requires `jmap` feature)
-- **Maildir** support (requires `maildir` feature)
-- **SMTP** backend <sup>[rfc5321](https://www.iana.org/go/rfc5321)</sup> (requires `smtp` feature)
-- **TLS** support:
-  - [native-tls](https://crates.io/crates/native-tls) (requires `native-tls` feature)
-  - [rustls](https://crates.io/crates/rustls):
-    - AWS-LC crypto provider (requires `rustls-aws` feature)
-    - Ring crypto provider (requires `rustls-ring` feature)
-- **SASL** support: anonymous, login, plain, oauthbearer, xoauth2, scram-sha-256
 
 > [!TIP]
 > Himalaya TUI is written in [Rust](https://www.rust-lang.org/) and uses [cargo features](https://doc.rust-lang.org/cargo/reference/features.html) to gate backend support. The default feature set is declared in [Cargo.toml](./Cargo.toml).
