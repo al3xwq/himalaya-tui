@@ -209,6 +209,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "block2"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cdeb9d870516001442e364c5220d3574d2da8dc765554b4a617230d33fa58ef5"
+dependencies = [
+ "objc2",
+]
+
+[[package]]
 name = "bounded-static"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -411,9 +420,9 @@ dependencies = [
 
 [[package]]
 name = "compact_str"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fdb1325a1cece981e8a296ab8f0f9b63ae357bd0784a9faaf548cc7b480707a"
+checksum = "9dfdd1c2274d9aa354115b09dc9a901d6c5576818cdf70d14cae2bdb47df00ab"
 dependencies = [
  "castaway",
  "cfg-if",
@@ -539,6 +548,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ctrlc"
+version = "3.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0b1fab2ae45819af2d0731d60f2afe17227ebb1a1538a236da84c93e9a60162"
+dependencies = [
+ "dispatch2",
+ "nix 0.31.3",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "darling"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -647,14 +667,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e0e367e4e7da84520dedcac1901e4da967309406d1e51017ae1abfb97adbd38"
 dependencies = [
  "bitflags 2.11.1",
+ "block2",
+ "libc",
  "objc2",
 ]
 
 [[package]]
 name = "displaydoc"
-version = "0.2.5"
+version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97369cbbc041bc366949bc74d34658d6cda5621039731c6310521892a3a20ae0"
+checksum = "1ac70aa55017e108007fbaf5aa0f54b021c98f92ff8af59d42eda9da96e3dd4f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1389,8 +1411,8 @@ dependencies = [
 
 [[package]]
 name = "io-discovery"
-version = "0.0.1"
-source = "git+https://github.com/pimalaya/io-discovery#7303e6b73c5a139e33ac95b242b2ef82b21697a6"
+version = "0.1.0"
+source = "git+https://github.com/pimalaya/io-discovery#ec82afbb532f76a7507a8bb3f470685352e97f04"
 dependencies = [
  "anyhow",
  "base64",
@@ -1410,7 +1432,7 @@ dependencies = [
 [[package]]
 name = "io-email"
 version = "0.0.1"
-source = "git+https://github.com/pimalaya/io-email#3401c7bc1338cd2396398afeebbedc48dff3fb49"
+source = "git+https://github.com/pimalaya/io-email#db314793398f252023d0a2b2ac3bc2145d93d11a"
 dependencies = [
  "chrono",
  "io-imap",
@@ -1447,7 +1469,7 @@ dependencies = [
 [[package]]
 name = "io-imap"
 version = "0.0.1"
-source = "git+https://github.com/pimalaya/io-imap#0a6a3ef4761b12b29cd5b9178b0cb7889d84ccbc"
+source = "git+https://github.com/pimalaya/io-imap#b6871a87f5b491003dbcc61bcdde4dd5d0b17828"
 dependencies = [
  "anyhow",
  "base64",
@@ -1535,9 +1557,9 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "jiff"
-version = "0.2.25"
+version = "0.2.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6835eea34fb6321b9b3aa7b685c2b433948c09447e389dc017fdf687d5d11e65"
+checksum = "392c70591e8749fe235ddaf513e6f58b26bce3dcc16524cecc8936f75afa161e"
 dependencies = [
  "jiff-static",
  "log",
@@ -1548,9 +1570,9 @@ dependencies = [
 
 [[package]]
 name = "jiff-static"
-version = "0.2.25"
+version = "0.2.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c22e04db9c58f5136eb1757f3d5c49a7b187f49e52185228cbd2f5acdfcc08c"
+checksum = "47b605b0c050d845fc355bb11eb3f9a8deddc218ea60c76e61aa1f2adfb2c96a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1765,7 +1787,7 @@ version = "1.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c0aeb26bf5e836cc1c341c8106051b573f1766dfa05aa87f0b98be5e51b02303"
 dependencies = [
- "nix",
+ "nix 0.29.0",
  "winapi",
 ]
 
@@ -1800,9 +1822,9 @@ dependencies = [
 
 [[package]]
 name = "memchr"
-version = "2.8.0"
+version = "2.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
+checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
 
 [[package]]
 name = "memmem"
@@ -1849,8 +1871,8 @@ dependencies = [
 
 [[package]]
 name = "mml"
-version = "1.0.0"
-source = "git+https://github.com/pimalaya/mml#dfe871345c4f8ee21545ce145a9f74d4ac20243e"
+version = "1.1.0"
+source = "git+https://github.com/pimalaya/mml#48a94d5dd28bd1f5a5b2ff6c9ad63ef6be0c45f4"
 dependencies = [
  "chumsky",
  "log",
@@ -1914,6 +1936,18 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "memoffset",
+]
+
+[[package]]
+name = "nix"
+version = "0.31.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf20d2fde8ff38632c426f1165ed7436270b44f199fc55284c38276f9db47c3d"
+dependencies = [
+ "bitflags 2.11.1",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
 ]
 
 [[package]]
@@ -2347,13 +2381,14 @@ dependencies = [
 [[package]]
 name = "pimalaya-cli"
 version = "0.0.1"
-source = "git+https://github.com/pimalaya/cli#7e7287d081f5907874b3159bf20b55f259636ff7"
+source = "git+https://github.com/pimalaya/cli#b4078bd986685fdd0193e7fe5a383d02defc2bc5"
 dependencies = [
  "anyhow",
  "clap",
  "clap_complete",
  "clap_mangen",
  "crossterm 0.29.0",
+ "ctrlc",
  "env_logger",
  "git2",
  "inquire",
@@ -3367,7 +3402,7 @@ dependencies = [
  "libc",
  "log",
  "memmem",
- "nix",
+ "nix 0.29.0",
  "num-derive",
  "num-traits",
  "ordered-float",
