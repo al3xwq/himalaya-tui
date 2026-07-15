@@ -270,12 +270,12 @@ fn translate_key(model: &Model, key: KeyEvent) -> Option<Message> {
             // - Shift+a = Reply (A)ll
             BottomPanel::Message => {
                 if key.code == KeyCode::Char('R') {
-                    return Some(Message::StartReplyToSelected { reply_all: false })
+                    return Some(Message::StartReplyToSelected { reply_all: false });
                 } else if key.code == KeyCode::Char('A') {
-                    return Some(Message::StartReplyToSelected { reply_all: true })
+                    return Some(Message::StartReplyToSelected { reply_all: true });
                 }
             }
-            _ => ()
+            _ => (),
         }
     }
 
@@ -655,7 +655,7 @@ fn cancel_compose(model: &mut Model) {
 }
 
 fn load_mailboxes(model: &mut Model) -> Option<Message> {
-    let result = model.client.list_mailboxes(false);
+    let result = model.client.list_mailboxes(true);
     match result {
         Ok(mailboxes) => {
             let was_empty = mailboxes.is_empty();
