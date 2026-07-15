@@ -144,7 +144,15 @@ fn render_mailboxes(frame: &mut Frame, model: &mut Model, area: Rect) {
                 Style::default()
             };
 
-            ListItem::new(Line::from(Span::styled(mailbox.name.clone(), style)))
+            let _unread = mailbox.unread.map(|n| n.to_string());
+            let unread = _unread.as_deref().unwrap_or("?");
+            let _total = mailbox.total.map(|n| n.to_string());
+            let total = _total.as_deref().unwrap_or("?");
+
+            ListItem::new(Line::from(Span::styled(
+                mailbox.name.clone() + " (" + unread + "/" + total + ")",
+                style,
+            )))
         })
         .collect();
 
