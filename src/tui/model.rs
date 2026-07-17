@@ -37,7 +37,7 @@ pub struct Model {
     pub mailboxes: Vec<Mailbox>,
     pub mailbox_index: usize,
     pub mailbox_offset: usize,
-    pub mailbox_filter: Input,
+    pub filter: Input,
     pub envelopes: Vec<Envelope>,
     pub envelope_index: usize,
     pub envelope_offset: usize,
@@ -86,7 +86,7 @@ impl Model {
     /// Case-insensitive substring match on the name; empty filter
     /// returns the full list.
     pub fn filtered_mailboxes(&self) -> Vec<&Mailbox> {
-        let needle = self.mailbox_filter.value();
+        let needle = self.filter.value();
         if needle.is_empty() {
             return self.mailboxes.iter().collect();
         }
