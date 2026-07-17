@@ -1,30 +1,14 @@
-// This file is part of Himalaya TUI, a TUI to manage emails.
-//
-// Copyright (C) 2025-2026  soywod <pimalaya.org@posteo.net>
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 //! Clap-driven CLI surface and the bridge into the TUI: [`Cli::try_into_tui_model`]
 //! turns parsed flags + on-disk config (or the wizard) into a ready-to-run
 //! [`Model`], applying CLI overrides last.
 
 use std::{env::temp_dir, fs::File, path::PathBuf, time::Instant};
 
-use anyhow::{Result, bail};
+use anyhow::Result;
+#[cfg(not(all(feature = "imap", feature = "smtp", feature = "jmap")))]
+use anyhow::bail;
 use clap::{CommandFactory, Parser, Subcommand};
 use edtui::{EditorState, Lines};
-use io_email::client::EmailClientStd;
 use pimalaya_cli::{
     clap::{
         args::{JsonFlag, LogFlags},
@@ -39,14 +23,16 @@ use pimalaya_config::toml::TomlConfig;
 use simplelog::WriteLogger;
 use tui_input::Input;
 
+#[cfg(all(feature = "imap", feature = "smtp", feature = "jmap"))]
+use crate::wizard;
 use crate::{
-    config::Config,
+    config::{AccountConfig, Config},
+    shared::client::EmailClient,
     tui::{
         model::{BottomPanel, Keybinds, Message, Model, Panel},
         theme::Theme,
         update,
     },
-    wizard,
 };
 
 #[derive(Parser, Debug)]
@@ -130,26 +116,30 @@ impl Cli {
         let mut keybinds_config = None;
         let mut theme = Theme::default();
 
-        let mut account_config = if let Some(mut config) = loaded {
+        let mut account = None;
+        if let Some(mut config) = loaded {
             display_name = config.display_name.take();
             signature = config.signature.take().unwrap_or_default();
             keybinds_config = config.keybinds.take();
             theme = Theme::resolve(&config.theme);
-            match config.take_account(self.account_or_server.as_deref())? {
-                None => bail!("Account not found"),
-                Some((name, account)) => {
-                    account_name = name;
-                    account
-                }
+            if let Some((name, cfg)) = config.take_account(self.account_or_server.as_deref())? {
+                account_name = name;
+                account = Some(cfg);
             }
-        } else {
-            spinner.clear();
-            let account = match self.account_or_server.as_deref() {
-                Some(seed) => wizard::discover::run_with_input(seed, self.from.as_deref()),
-                None => wizard::discover::run(self.from.as_deref()),
-            }?;
-            spinner = Spinner::start("Loading…");
-            account
+        }
+
+        let mut account_config = match account {
+            Some(account) => account,
+            // No matching account (no config, or the config carries no
+            // such account and no default): fall back to the wizard,
+            // seeding it with the positional argument (an email, server
+            // or URI) when one was given, otherwise prompting for one.
+            None => {
+                spinner.clear();
+                let account = run_wizard(self.account_or_server.as_deref(), self.from.as_deref())?;
+                spinner = Spinner::start("Loading…");
+                account
+            }
         };
 
         let from = account_config.from.clone();
@@ -157,46 +147,7 @@ impl Cli {
         let signature = account_config.signature.take().unwrap_or(signature);
         let keybinds = self.keybinds.or(keybinds_config);
 
-        let mut client = EmailClientStd::new();
-        let mut configured = false;
-
-        #[cfg(feature = "jmap")]
-        if let Some(jmap_cfg) = account_config.jmap {
-            client = client.with_jmap(jmap_cfg.into_client()?);
-            configured = true;
-        }
-
-        #[cfg(feature = "imap")]
-        if let Some(imap_cfg) = account_config.imap {
-            client = client.with_imap(imap_cfg.into_client()?);
-            configured = true;
-        }
-
-        #[cfg(feature = "maildir")]
-        if let Some(maildir_cfg) = account_config.maildir {
-            client = client.with_maildir(maildir_cfg.into_client());
-            configured = true;
-        }
-
-        #[cfg(feature = "m2dir")]
-        if let Some(m2dir_cfg) = account_config.m2dir {
-            client = client.with_m2dir(m2dir_cfg.into_client());
-            configured = true;
-        }
-
-        #[cfg(feature = "smtp")]
-        if let Some(smtp_cfg) = account_config.smtp {
-            match smtp_cfg.into_client() {
-                Ok(smtp) => client = client.with_smtp(smtp),
-                Err(err) => {
-                    log::warn!("SMTP backend disabled: {err}. Sending will be unavailable.")
-                }
-            }
-        }
-
-        if !configured {
-            bail!("Wizard produced no usable backend");
-        }
+        let client = EmailClient::new(account_config)?;
 
         let mut model = Model {
             running: true,
@@ -243,6 +194,26 @@ impl Cli {
 
         Ok(model)
     }
+}
+
+/// Runs the interactive setup wizard used when no configuration file is
+/// found. The wizard discovers IMAP/SMTP/JMAP accounts, so it is only
+/// compiled when all three backends are enabled; other builds require a
+/// configuration file.
+#[cfg(all(feature = "imap", feature = "smtp", feature = "jmap"))]
+fn run_wizard(seed: Option<&str>, from: Option<&str>) -> Result<AccountConfig> {
+    match seed {
+        Some(seed) => wizard::discover::run_with_input(seed, from),
+        None => wizard::discover::run(from),
+    }
+}
+
+#[cfg(not(all(feature = "imap", feature = "smtp", feature = "jmap")))]
+fn run_wizard(_seed: Option<&str>, _from: Option<&str>) -> Result<AccountConfig> {
+    bail!(
+        "The setup wizard requires the imap, smtp and jmap features; \
+         pass a configuration file with --config instead"
+    )
 }
 
 /// Auxiliary subcommands. When none is given, the binary launches the

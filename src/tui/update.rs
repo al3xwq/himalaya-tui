@@ -1,36 +1,15 @@
-// This file is part of Himalaya TUI, a TUI to manage emails.
-//
-// Copyright (C) 2025-2026  soywod <pimalaya.org@posteo.net>
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 //! Update layer of the Elm Architecture: every state transition and
 //! every side effect lives behind [`apply`]. Raw key events enter as
 //! [`Message::Key`] and are dispatched in context by [`translate_key`].
 //! All I/O goes through `model.client`; the model is the sole owner
 //! of both UI state and the email client.
 
-use std::time::Instant;
+use std::{slice, time::Instant};
 
 use anyhow::{Result, bail};
 use edtui::{
     EditorMode, EditorState, Index2, Lines,
     actions::{Execute, OpenSystemEditor},
-};
-use io_email::{
-    flag::types::{Flag, FlagOp, IanaFlag},
-    mailbox::types::Mailbox,
 };
 use mail_parser::MessageParser;
 use mml::{
@@ -43,9 +22,15 @@ use mml::{
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tui_input::InputRequest;
 
-use crate::tui::model::{
-    BottomPanel, ComposeAction, Dialog, EnvelopeAction, FlagAction, MAILBOX_DIALOG_VISIBLE,
-    Message, Model, Panel,
+use crate::{
+    email::{
+        flag::{Flag, FlagOp, IanaFlag},
+        mailbox::Mailbox,
+    },
+    tui::model::{
+        BottomPanel, ComposeAction, Dialog, EnvelopeAction, FlagAction, MAILBOX_DIALOG_VISIBLE,
+        Message, Model, Panel,
+    },
 };
 
 pub fn apply_all(model: &mut Model, mut next_msg: Option<Message>) {
@@ -156,7 +141,7 @@ fn apply(model: &mut Model, msg: Message) -> Option<Message> {
             load_envelopes(model);
             None
         }
-        Message::ReadSelectedMessage => {
+        Message::ReadSelected => {
             read_selected(model);
             None
         }
@@ -487,7 +472,7 @@ fn dialog_confirm(model: &mut Model) -> Option<Message> {
             let action = model.selected_envelope_action();
             close_dialog(model);
             match action {
-                EnvelopeAction::Read => Some(Message::ReadSelectedMessage),
+                EnvelopeAction::Read => Some(Message::ReadSelected),
                 EnvelopeAction::Reply => Some(Message::StartReplyToSelected { reply_all: false }),
                 EnvelopeAction::ReplyAll => Some(Message::StartReplyToSelected { reply_all: true }),
                 EnvelopeAction::Forward => Some(Message::StartForwardSelected),
@@ -796,7 +781,7 @@ fn do_flag(model: &mut Model, add: bool) {
     let op = if add { FlagOp::Add } else { FlagOp::Remove };
     let result = model
         .client
-        .store_flags(&mailbox, &[&envelope.id], &[flag.clone()], op);
+        .store_flags(&mailbox, &[&envelope.id], slice::from_ref(&flag), op);
 
     match result {
         Ok(()) if add => {

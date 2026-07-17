@@ -1,30 +1,9 @@
-// This file is part of Himalaya TUI, a TUI to manage emails.
-//
-// Copyright (C) 2025-2026  soywod <pimalaya.org@posteo.net>
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 //! View layer of the Elm Architecture: every render path is rooted at
 //! [`render`]. Reads [`Model`] (and adjusts the `*_offset` scroll
 //! fields during layout); never produces a [`crate::tui::model::Message`]
 //! or touches [`crate::tui::update`].
 
 use edtui::{EditorTheme, EditorView};
-use io_email::{
-    envelope::types::Envelope,
-    flag::types::{Flag, IanaFlag},
-};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Margin, Rect},
@@ -36,12 +15,18 @@ use ratatui::{
     },
 };
 
-use crate::tui::{
-    model::{
-        BottomPanel, ComposeAction, Dialog, EnvelopeAction, FlagAction, Keybinds,
-        MAILBOX_DIALOG_VISIBLE, Model, Panel,
+use crate::{
+    email::{
+        envelope::Envelope,
+        flag::{Flag, IanaFlag},
     },
-    theme::Theme,
+    tui::{
+        model::{
+            BottomPanel, ComposeAction, Dialog, EnvelopeAction, FlagAction, Keybinds,
+            MAILBOX_DIALOG_VISIBLE, Model, Panel,
+        },
+        theme::Theme,
+    },
 };
 
 /// View entry point. Lays out the header, the three-pane main area

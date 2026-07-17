@@ -1,20 +1,3 @@
-// This file is part of Himalaya TUI, a TUI to manage emails.
-//
-// Copyright (C) 2025-2026  soywod <pimalaya.org@posteo.net>
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 //! Model layer of the Elm Architecture: every piece of TUI state plus
 //! the [`Message`] enum naming each transition. Mutation happens in
 //! [`crate::tui::update`]; rendering in [`crate::tui::view`].
@@ -23,17 +6,19 @@ use std::time::{Duration, Instant};
 
 use clap::ValueEnum;
 use edtui::{EditorEventHandler, EditorState};
-use io_email::{
-    client::EmailClientStd,
-    envelope::types::Envelope,
-    flag::types::{Flag, IanaFlag},
-    mailbox::types::Mailbox,
-};
 use ratatui::crossterm::event::KeyEvent;
 use serde::{Deserialize, Serialize};
 use tui_input::Input;
 
-use crate::tui::theme::Theme;
+use crate::{
+    email::{
+        envelope::Envelope,
+        flag::{Flag, IanaFlag},
+        mailbox::Mailbox,
+    },
+    shared::client::EmailClient,
+    tui::theme::Theme,
+};
 
 /// Number of mailbox rows visible inside the CopyTo/MoveTo dialog
 /// list block. Both the view (frame sizing) and the update layer
@@ -77,7 +62,7 @@ pub struct Model {
     /// aliases. `None` falls back to Vim.
     pub keybinds: Option<Keybinds>,
     pub theme: Theme,
-    pub client: EmailClientStd,
+    pub client: EmailClient,
     /// Timestamp of the last successful network round-trip (any user
     /// action or NOOP). The app loop dispatches [`Message::Ping`] once
     /// the elapsed time crosses [`PING_INTERVAL`].
@@ -129,7 +114,7 @@ impl Model {
         if self.envelope_page_size == 0 || self.envelope_total == 0 {
             1
         } else {
-            ((self.envelope_total as usize) + self.envelope_page_size - 1) / self.envelope_page_size
+            (self.envelope_total as usize).div_ceil(self.envelope_page_size)
         }
     }
 
@@ -325,7 +310,7 @@ pub enum Message {
 
     LoadMailboxes,
     LoadEnvelopes,
-    ReadSelectedMessage,
+    ReadSelected,
     StartReplyToSelected { reply_all: bool },
     StartForwardSelected,
     CopySelectedToTarget,

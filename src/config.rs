@@ -1,23 +1,7 @@
-// This file is part of Himalaya TUI, a TUI to manage emails.
-//
-// Copyright (C) 2025-2026  soywod <pimalaya.org@posteo.net>
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 //! TOML configuration model loaded from the same file used by the
-//! [`himalaya`] CLI, plus the `into_client` adapters that turn each
-//! per-backend block into a live IMAP/SMTP/JMAP/Maildir client.
+//! [`himalaya`] CLI. Each per-backend block deserializes here; the live
+//! clients that consume it live in the per-protocol modules
+//! (`crate::imap`, `crate::jmap`, …).
 //!
 //! `Config::project_name()` returns `"himalaya"` (not the crate name)
 //! so the default XDG path resolves to `himalaya/config.toml`, allowing
@@ -39,12 +23,11 @@ use pimalaya_config::{
     secret::{Secret, SecretError},
     toml::{TomlConfig, shell_expanded_string},
 };
-use pimalaya_stream::{
-    sasl::{
-        Sasl, SaslAnonymous, SaslLogin, SaslOauthbearer, SaslPlain, SaslScramSha256, SaslXoauth2,
-    },
-    tls::{Rustls, RustlsCrypto, Tls, TlsProvider},
+#[cfg(any(feature = "imap", feature = "smtp"))]
+use pimalaya_stream::sasl::{
+    Sasl, SaslAnonymous, SaslLogin, SaslOauthbearer, SaslPlain, SaslScramSha256, SaslXoauth2,
 };
+use pimalaya_stream::tls::{Rustls, RustlsCrypto, Tls, TlsProvider};
 use ratatui::style::{Color, Modifier, Style};
 use serde::{Deserialize, Serialize};
 #[cfg(any(feature = "imap", feature = "smtp", feature = "jmap"))]
@@ -285,31 +268,6 @@ pub struct ImapIdConfig {
 }
 
 #[cfg(feature = "imap")]
-impl ImapConfig {
-    pub fn into_client(self) -> Result<io_email::imap::client::ImapClientStd> {
-        let mut tls: Tls = self.tls.try_into()?;
-        tls.rustls.alpn = vec!["imap".into()];
-        let server = parse_imap_server(&self.server)?;
-        let sasl: Option<Sasl> = self
-            .sasl
-            .and_then(|cfg| {
-                let host = server.host_str()?;
-                let port = server.port_or_known_default()?;
-                Some(cfg.try_into_sasl(host, port))
-            })
-            .transpose()?;
-        let auto_id = resolve_auto_id_params(&self.id)?;
-        Ok(io_email::imap::client::ImapClientStd::connect(
-            &server,
-            &tls,
-            self.starttls,
-            sasl,
-            auto_id,
-        )?)
-    }
-}
-
-#[cfg(feature = "imap")]
 pub fn parse_imap_server(server: &str) -> Result<Url> {
     match Url::parse(server) {
         Ok(url) => Ok(url),
@@ -389,35 +347,6 @@ pub struct SmtpConfig {
 }
 
 #[cfg(feature = "smtp")]
-impl SmtpConfig {
-    pub fn into_client(self) -> Result<io_email::smtp::client::SmtpClientStd> {
-        use std::net::Ipv4Addr;
-
-        use io_smtp::rfc5321::types::ehlo_domain::EhloDomain;
-
-        let mut tls: Tls = self.tls.try_into()?;
-        tls.rustls.alpn = vec!["smtp".into()];
-        let domain: EhloDomain<'static> = Ipv4Addr::new(127, 0, 0, 1).into();
-        let server = parse_smtp_server(&self.server)?;
-        let sasl: Option<Sasl> = self
-            .sasl
-            .and_then(|cfg| {
-                let host = server.host_str()?;
-                let port = server.port_or_known_default()?;
-                Some(cfg.try_into_sasl(host, port))
-            })
-            .transpose()?;
-        Ok(io_email::smtp::client::SmtpClientStd::connect(
-            &server,
-            &tls,
-            self.starttls,
-            domain,
-            sasl,
-        )?)
-    }
-}
-
-#[cfg(feature = "smtp")]
 pub fn parse_smtp_server(server: &str) -> Result<Url> {
     match Url::parse(server) {
         Ok(url) => Ok(url),
@@ -440,20 +369,6 @@ pub struct JmapConfig {
     #[serde(default)]
     pub tls: TlsConfig,
     pub auth: JmapAuthConfig,
-}
-
-#[cfg(feature = "jmap")]
-impl JmapConfig {
-    pub fn into_client(self) -> Result<io_email::jmap::client::JmapClientStd> {
-        let mut tls: Tls = self.tls.try_into()?;
-        tls.rustls.alpn = vec!["http/1.1".into()];
-
-        let http_auth = jmap_http_auth(self.auth)?;
-        let url = parse_jmap_server(&self.server)?;
-        Ok(io_email::jmap::client::JmapClientStd::connect(
-            &url, &tls, http_auth,
-        )?)
-    }
 }
 
 #[cfg(feature = "jmap")]
@@ -510,13 +425,6 @@ pub struct MaildirConfig {
     pub root: PathBuf,
 }
 
-#[cfg(feature = "maildir")]
-impl MaildirConfig {
-    pub fn into_client(self) -> io_email::maildir::client::MaildirClient {
-        io_email::maildir::client::MaildirClient::new(self.root.to_string_lossy().into_owned())
-    }
-}
-
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct M2dirConfig {
@@ -524,13 +432,6 @@ pub struct M2dirConfig {
     /// `.m2store` marker). Each child mailbox is an m2dir with a
     /// `.m2dir` marker.
     pub root: PathBuf,
-}
-
-#[cfg(feature = "m2dir")]
-impl M2dirConfig {
-    pub fn into_client(self) -> io_email::m2dir::client::M2dirClient {
-        io_email::m2dir::client::M2dirClient::new(self.root.to_string_lossy().into_owned())
-    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -644,6 +545,7 @@ pub struct SaslScramSha256Config {
     pub password: Secret,
 }
 
+#[cfg(any(feature = "imap", feature = "smtp"))]
 impl SaslConfig {
     /// Resolves the SASL config into a runtime [`Sasl`]. `host` and
     /// `port` come from the live server URL; they are only used by

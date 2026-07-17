@@ -1,22 +1,6 @@
-// This file is part of Himalaya TUI, a TUI to manage emails.
-//
-// Copyright (C) 2025-2026  soywod <pimalaya.org@posteo.net>
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 //! PACC step of the wizard's discovery chain.
 
+use io_pim_discovery::pacc::{client::DiscoveryPaccClientStd, config::DiscoveryPaccConfig};
 use log::debug;
 use pimalaya_cli::{
     spinner::Spinner,
@@ -26,11 +10,10 @@ use pimalaya_cli::{
         smtp::{Encryption as SmtpEncryption, SmtpAuth, SmtpSecret, WizardSmtpConfig},
     },
 };
-use pimconf::pacc::{client::DiscoveryPaccClientStd, types::PaccConfig};
 
 use crate::wizard::discover::{DiscoveryResult, discovery_resolver, discovery_tls};
 
-pub fn run(domain: &str) -> Option<PaccConfig> {
+pub fn run(domain: &str) -> Option<DiscoveryPaccConfig> {
     let spinner = Spinner::start(format!("Probing PACC for {domain}…"));
     let mut client = DiscoveryPaccClientStd::new(discovery_resolver()).with_tls(discovery_tls());
 
@@ -47,7 +30,7 @@ pub fn run(domain: &str) -> Option<PaccConfig> {
     }
 }
 
-pub fn defaults(config: &PaccConfig) -> DiscoveryResult {
+pub fn defaults(config: &DiscoveryPaccConfig) -> DiscoveryResult {
     let imap = config.protocols.imap.as_ref().map(|p| WizardImapConfig {
         host: p.host.clone(),
         port: 993,
@@ -75,7 +58,7 @@ pub fn defaults(config: &PaccConfig) -> DiscoveryResult {
     DiscoveryResult { imap, smtp, jmap }
 }
 
-fn summary(domain: &str, config: &PaccConfig) -> String {
+fn summary(domain: &str, config: &DiscoveryPaccConfig) -> String {
     let p = &config.protocols;
     let mut protos = Vec::with_capacity(3);
     if p.jmap.is_some() {

@@ -1,20 +1,3 @@
-// This file is part of Himalaya TUI, a TUI to manage emails.
-//
-// Copyright (C) 2025-2026  soywod <pimalaya.org@posteo.net>
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 //! Color themes for the TUI: the resolved [`Theme`] struct used by
 //! every render function, plus the built-in presets shipped as `const`
 //! values. [`Theme::resolve`] layers per-field overrides from
@@ -23,6 +6,6 @@
 pub mod default;
 pub mod dracula_dark;
 pub mod one_light;
-mod theme;
+mod resolved;
 
-pub use theme::Theme;
+pub use resolved::Theme;

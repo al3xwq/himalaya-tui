@@ -1,26 +1,21 @@
-// This file is part of Himalaya TUI, a TUI to manage emails.
-//
-// Copyright (C) 2025-2026  soywod <pimalaya.org@posteo.net>
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 //! Binary entry point: parse CLI flags, run any auxiliary subcommand
 //! (completions, manuals), otherwise build the [`tui::model::Model`]
 //! from config or wizard and hand it to [`tui::app::run`].
 
 mod cli;
 mod config;
+mod email;
+#[cfg(feature = "imap")]
+mod imap;
+#[cfg(feature = "jmap")]
+mod jmap;
+#[cfg(feature = "m2dir")]
+mod m2dir;
+#[cfg(feature = "maildir")]
+mod maildir;
+mod shared;
+#[cfg(feature = "smtp")]
+mod smtp;
 mod tui;
 #[cfg(all(feature = "imap", feature = "smtp", feature = "jmap"))]
 mod wizard;
